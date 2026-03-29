@@ -9,15 +9,13 @@ public static class AutoSaveManager
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "LTTPEnhancementTools", "autoSave.json");
 
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
-
     public static AutoSaveState Load()
     {
         try
         {
             if (!File.Exists(AutoSavePath)) return new AutoSaveState();
             string json = File.ReadAllText(AutoSavePath);
-            return JsonSerializer.Deserialize<AutoSaveState>(json, JsonOptions) ?? new AutoSaveState();
+            return JsonSerializer.Deserialize<AutoSaveState>(json, JsonDefaults.Standard) ?? new AutoSaveState();
         }
         catch
         {
@@ -30,8 +28,8 @@ public static class AutoSaveManager
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(AutoSavePath)!);
-            File.WriteAllText(AutoSavePath, JsonSerializer.Serialize(state, JsonOptions));
+            File.WriteAllText(AutoSavePath, JsonSerializer.Serialize(state, JsonDefaults.Standard));
         }
-        catch { /* best-effort */ }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[AutoSaveManager] Save failed: {ex.Message}"); }
     }
 }

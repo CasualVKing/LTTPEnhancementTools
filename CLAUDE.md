@@ -19,7 +19,10 @@ publish.bat
 dotnet build -c Release
 ```
 
-There are no automated tests in this project.
+```bash
+# Run tests
+dotnet test LTTPEnhancementTools.Tests/LTTPEnhancementTools.Tests.csproj
+```
 
 **GitHub Release**: Push a tag matching `v*.*.*` to trigger the release workflow, which builds and publishes artifacts automatically. The workflow passes `/dMyVersion=X.Y.Z` to Inno Setup via the tag name.
 

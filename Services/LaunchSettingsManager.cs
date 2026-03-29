@@ -9,8 +9,6 @@ public static class LaunchSettingsManager
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "LTTPEnhancementTools", "launchSettings.json");
 
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
-
     /// <summary>Returns null if the file doesn't exist (triggers first-run wizard).</summary>
     public static LaunchSettings? TryLoad()
     {
@@ -18,7 +16,7 @@ public static class LaunchSettingsManager
         {
             if (!File.Exists(SettingsPath)) return null;
             string json = File.ReadAllText(SettingsPath);
-            return JsonSerializer.Deserialize<LaunchSettings>(json, JsonOptions) ?? new LaunchSettings();
+            return JsonSerializer.Deserialize<LaunchSettings>(json, JsonDefaults.Standard) ?? new LaunchSettings();
         }
         catch
         {
@@ -31,9 +29,9 @@ public static class LaunchSettingsManager
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
-            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(settings, JsonOptions));
+            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(settings, JsonDefaults.Standard));
         }
-        catch { /* best-effort */ }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[LaunchSettingsManager] Save failed: {ex.Message}"); }
     }
 
     public static bool FileExists() => File.Exists(SettingsPath);

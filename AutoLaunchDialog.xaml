@@ -1,0 +1,50 @@
+<Window x:Class="LTTPEnhancementTools.AutoLaunchDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Launch Options"
+        Width="380" Height="280"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BgBrush}"
+        ShowInTaskbar="False">
+
+    <StackPanel Margin="24,20">
+        <TextBlock Text="Launch Options"
+                   Foreground="{StaticResource TextBrush}"
+                   FontSize="18"
+                   FontWeight="SemiBold"
+                   Margin="0,0,0,6"/>
+
+        <TextBlock Text="Choose which companion tools to launch alongside the emulator."
+                   Foreground="{StaticResource TextSecondaryBrush}"
+                   FontSize="12"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,20"/>
+
+        <Button x:Name="TrackerOnlyBtn"
+                Content="Tracker Only"
+                Style="{StaticResource AccentButton}"
+                Padding="14,8"
+                Margin="0,0,0,8"
+                Click="TrackerOnly_Click"/>
+
+        <Button x:Name="ArchipelagoOnlyBtn"
+                Content="Archipelago Only"
+                Style="{StaticResource AccentButton}"
+                Padding="14,8"
+                Margin="0,0,0,8"
+                Click="ArchipelagoOnly_Click"/>
+
+        <Button x:Name="ArchipelagoAndTrackerBtn"
+                Content="Archipelago + Tracker"
+                Style="{StaticResource AccentButton}"
+                Padding="14,8"
+                Margin="0,0,0,16"
+                Click="ArchipelagoAndTracker_Click"/>
+
+        <Button Content="Cancel"
+                Style="{StaticResource DarkButton}"
+                Padding="14,8"
+                Click="Cancel_Click"/>
+    </StackPanel>
+</Window>

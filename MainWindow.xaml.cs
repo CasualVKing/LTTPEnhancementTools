@@ -34,6 +34,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string? _emulatorPath;
     private string? _connectorScriptPath;
     private string? _sniPath;
+    private string? _archipelagoLauncherPath;
     private string? _trackerUrl;
     private string? _seedUrl;
     private string? _currentPlaylistPath;
@@ -57,6 +58,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         get => _sniPath;
         set { _sniPath = value; OnPropertyChanged(); SaveLaunchSettings(); }
+    }
+    public string? ArchipelagoLauncherPath
+    {
+        get => _archipelagoLauncherPath;
+        set { _archipelagoLauncherPath = value; OnPropertyChanged(); SaveLaunchSettings(); }
     }
     public string? TrackerUrl
     {
@@ -219,7 +225,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private TrackSlot? _playingSlot;
     private TrackSlot? _playingOriginalSlot;
     private readonly ApplyEngine _applyEngine = new();
-    private static readonly System.Net.Http.HttpClient Http = new();
+    private CancellationTokenSource _closeCts = new();
+    private static readonly System.Net.Http.HttpClient Http = Services.SharedHttp.Client;
 
     private static string GetSpritePreviewCachePath(string url)
     {
@@ -293,6 +300,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _emulatorPath        = launchSettings.EmulatorPath.NullIfEmpty();
             _connectorScriptPath = launchSettings.ConnectorScriptPath.NullIfEmpty();
             _sniPath             = launchSettings.SniPath.NullIfEmpty();
+            _archipelagoLauncherPath = launchSettings.ArchipelagoLauncherPath.NullIfEmpty();
             _trackerUrl          = launchSettings.TrackerUrl.NullIfEmpty();
             _seedUrl             = launchSettings.SeedUrl.NullIfEmpty();
         }
@@ -390,7 +398,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             DefaultSpritePreviewUrl = cachePath;
         }
-        catch { }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[WARN] Default Link preview failed: {ex.Message}");
+        }
     }
 
     private void SyncTrackerCombo()
@@ -422,10 +433,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _emulatorPath        = wizard.Result.EmulatorPath.NullIfEmpty();
                 _connectorScriptPath = wizard.Result.ConnectorScriptPath.NullIfEmpty();
                 _sniPath             = wizard.Result.SniPath.NullIfEmpty();
+                _archipelagoLauncherPath = wizard.Result.ArchipelagoLauncherPath.NullIfEmpty();
                 _trackerUrl          = wizard.Result.TrackerUrl.NullIfEmpty();
                 OnPropertyChanged(nameof(EmulatorPath));
                 OnPropertyChanged(nameof(ConnectorScriptPath));
                 OnPropertyChanged(nameof(SniPath));
+                OnPropertyChanged(nameof(ArchipelagoLauncherPath));
                 OnPropertyChanged(nameof(TrackerUrl));
                 SyncTrackerCombo();
                 AppendLog("Launch settings saved.");
@@ -457,8 +470,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             var uri = new Uri("pack://application:,,,/Resources/trackCatalog.json");
             using var stream = Application.GetResourceStream(uri)!.Stream;
-            var entries = JsonSerializer.Deserialize<List<CatalogEntry>>(stream,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            var entries = JsonSerializer.Deserialize<List<CatalogEntry>>(stream, Services.JsonDefaults.ReadOnly);
 
             if (entries is null) return;
 
@@ -487,6 +499,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (dlg.ShowDialog(this) == true)
         {
+            long fileSize = new FileInfo(dlg.FileName).Length;
+            long effectiveSize = (fileSize % 1024 == 512) ? fileSize - 512 : fileSize;
+
+            if (effectiveSize < 2_097_152)
+            {
+                MessageBox.Show(
+                    "This appears to be a vanilla (unpatched) ROM.\n\n" +
+                    "MSU-1 music packs require a randomized ROM. " +
+                    "Please generate your randomized ROM first, then select it here.",
+                    "Vanilla ROM Detected",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
             _romPath = dlg.FileName;
             RomBaseName = Path.GetFileNameWithoutExtension(dlg.FileName);
             OutputBaseName = RomBaseName;
@@ -495,13 +522,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     // ── PCM Replace / Pick ────────────────────────────────────────────────
-    private void Replace_Click(object sender, RoutedEventArgs e)
+    private async void Replace_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button btn && btn.CommandParameter is TrackSlot slot)
-            PickPcmForSlot(slot);
+            await SafeAsync(() => PickPcmForSlot(slot));
     }
 
-    private async void PickPcmForSlot(TrackSlot slot)
+    private async Task PickPcmForSlot(TrackSlot slot)
     {
         var dlg = new OpenFileDialog
         {
@@ -562,74 +589,59 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (ext == ".pcm")
         {
-            // Direct assign — validate and show
-            string? error = PcmValidator.Validate(path);
-            slot.PcmPath = path;
-            slot.ValidationError = error;
-
-            if (error is not null)
-                AppendLog($"[WARN] Slot {slot.SlotNumber}: {error} (file: {Path.GetFileName(path)})");
-            else
-                AppendLog($"Slot {slot.SlotNumber} assigned: {Path.GetFileName(path)}");
-
-            SetDirty();
-            OnPropertyChanged(nameof(AssignedCountText));
-            OnPropertyChanged(nameof(CanApply));
+            ValidateAndAssignPcm(path, slot, Path.GetFileName(path));
         }
         else
         {
-            // Convert to MSU-1 PCM first
             string destPath = Path.ChangeExtension(path, ".pcm");
-            string srcName  = Path.GetFileName(path);
-            string destName = Path.GetFileName(destPath);
+            await ConvertAndAssignPcmAsync(path, destPath, slot);
+        }
+    }
 
-            AppendLog($"[Slot {slot.SlotNumber}] Converting {srcName} → {destName}...");
+    // ── Shared PCM assignment helpers ──────────────────────────────────────
+    private void ValidateAndAssignPcm(string pcmPath, TrackSlot slot, string displayName)
+    {
+        string? error = PcmValidator.Validate(pcmPath);
+        slot.PcmPath = pcmPath;
+        slot.ValidationError = error;
 
-            _isConverting = true;
+        if (error is not null)
+            AppendLog($"[WARN] Slot {slot.SlotNumber}: {error} (file: {displayName})");
+        else
+            AppendLog($"Slot {slot.SlotNumber} assigned: {displayName}");
+
+        SetDirty();
+        OnPropertyChanged(nameof(AssignedCountText));
+        OnPropertyChanged(nameof(CanApply));
+    }
+
+    private async Task<bool> ConvertAndAssignPcmAsync(string sourcePath, string destPath, TrackSlot slot)
+    {
+        string srcName = Path.GetFileName(sourcePath);
+        string destName = Path.GetFileName(destPath);
+        AppendLog($"[Slot {slot.SlotNumber}] Converting {srcName} → {destName}...");
+
+        _isConverting = true;
+        OnPropertyChanged(nameof(CanApply));
+        OnPropertyChanged(nameof(CanExportPack));
+        try
+        {
+            string? error = await PcmConverter.ConvertAsync(sourcePath, destPath);
+            if (error is not null)
+            {
+                AppendLog($"[ERROR] Slot {slot.SlotNumber}: {error}");
+                return false;
+            }
+
+            AppendLog($"[Slot {slot.SlotNumber}] Conversion complete → {destName}");
+            ValidateAndAssignPcm(destPath, slot, destName);
+            return true;
+        }
+        finally
+        {
+            _isConverting = false;
             OnPropertyChanged(nameof(CanApply));
             OnPropertyChanged(nameof(CanExportPack));
-
-            try
-            {
-                int lastMilestone = 0;
-                var progress = new Progress<double>(pct =>
-                {
-                    int milestone = (int)(pct * 4) * 25; // 25 / 50 / 75
-                    if (milestone > lastMilestone && milestone < 100)
-                    {
-                        AppendLog($"[Slot {slot.SlotNumber}] Converting... {milestone}%");
-                        lastMilestone = milestone;
-                    }
-                });
-
-                string? error = await PcmConverter.ConvertAsync(path, destPath, progress: progress);
-
-                if (error is not null)
-                {
-                    AppendLog($"[ERROR] Slot {slot.SlotNumber}: {error}");
-                    return;
-                }
-
-                AppendLog($"[Slot {slot.SlotNumber}] Conversion complete → {destName}");
-
-                // Validate and assign the newly created PCM
-                string? validationError = PcmValidator.Validate(destPath);
-                slot.PcmPath = destPath;
-                slot.ValidationError = validationError;
-
-                if (validationError is not null)
-                    AppendLog($"[WARN] Slot {slot.SlotNumber}: converted file issue: {validationError}");
-
-                SetDirty();
-                OnPropertyChanged(nameof(AssignedCountText));
-                OnPropertyChanged(nameof(CanApply));
-            }
-            finally
-            {
-                _isConverting = false;
-                OnPropertyChanged(nameof(CanApply));
-                OnPropertyChanged(nameof(CanExportPack));
-            }
         }
     }
 
@@ -738,15 +750,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var menu = new System.Windows.Controls.ContextMenu();
 
         var folderItem = new System.Windows.Controls.MenuItem { Header = "Import from Folder…" };
-        folderItem.Click += async (_, _) => await ImportOriginalsFromFolder();
+        folderItem.Click += async (_, _) => await SafeAsync(ImportOriginalsFromFolder);
         menu.Items.Add(folderItem);
 
         var zipItem = new System.Windows.Controls.MenuItem { Header = "Import from ZIP…" };
-        zipItem.Click += async (_, _) => await ImportOriginalsFromZip();
+        zipItem.Click += async (_, _) => await SafeAsync(ImportOriginalsFromZip);
         menu.Items.Add(zipItem);
 
         var urlItem = new System.Windows.Controls.MenuItem { Header = "Import from URL…" };
-        urlItem.Click += async (_, _) => await ImportOriginalsFromUrl();
+        urlItem.Click += async (_, _) => await SafeAsync(ImportOriginalsFromUrl);
         menu.Items.Add(urlItem);
 
         menu.Items.Add(new System.Windows.Controls.Separator());
@@ -756,7 +768,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Header = "Export Originals as Pack…",
             IsEnabled = Tracks.Any(t => t.HasOriginal)
         };
-        exportItem.Click += async (_, _) => await ExportOriginalsAsPack();
+        exportItem.Click += async (_, _) => await SafeAsync(ExportOriginalsAsPack);
         menu.Items.Add(exportItem);
 
         var clearItem = new System.Windows.Controls.MenuItem
@@ -787,25 +799,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         };
 
         if (dlg.ShowDialog(this) != true) return;
-        string selectedPath = dlg.FolderName;
 
         AppendLog("Importing original soundtrack from folder…");
-        var progress = new Progress<(int current, int total, string trackName)>(p =>
-            AppendLog($"  Converting {p.current}/{p.total}: {p.trackName}"));
-
         string? error = await OriginalSoundtrackManager.ImportFromFolderAsync(
-            selectedPath, Tracks.ToList(), progress);
-
-        if (error is not null)
-        {
-            AppendLog($"[WARN] {error}");
-            MessageBox.Show(error, "Import Original Soundtrack", MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
-        else
-        {
-            int count = Tracks.Count(t => t.HasOriginal);
-            AppendLog($"Original soundtrack imported: {count} track(s) available for preview.");
-        }
+            dlg.FolderName, Tracks.ToList(), MakeImportProgress());
+        HandleImportResult(error);
     }
 
     private async Task ImportOriginalsFromZip()
@@ -820,22 +818,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (dlg.ShowDialog(this) != true) return;
 
         AppendLog("Importing original soundtrack from ZIP…");
-        var progress = new Progress<(int current, int total, string trackName)>(p =>
-            AppendLog($"  Converting {p.current}/{p.total}: {p.trackName}"));
-
         string? error = await OriginalSoundtrackManager.ImportFromZipAsync(
-            dlg.FileName, Tracks.ToList(), progress);
-
-        if (error is not null)
-        {
-            AppendLog($"[WARN] {error}");
-            MessageBox.Show(error, "Import Original Soundtrack", MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
-        else
-        {
-            int count = Tracks.Count(t => t.HasOriginal);
-            AppendLog($"Original soundtrack imported: {count} track(s) available for preview.");
-        }
+            dlg.FileName, Tracks.ToList(), MakeImportProgress());
+        HandleImportResult(error);
     }
 
     private async Task ImportOriginalsFromUrl()
@@ -877,12 +862,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (inputDialog.ShowDialog() != true || string.IsNullOrWhiteSpace(urlBox.Text)) return;
 
         AppendLog($"Downloading original soundtrack from URL…");
-        var progress = new Progress<(int current, int total, string trackName)>(p =>
-            AppendLog($"  Converting {p.current}/{p.total}: {p.trackName}"));
-
         string? error = await OriginalSoundtrackManager.ImportFromUrlAsync(
-            urlBox.Text.Trim(), Tracks.ToList(), Http, progress);
+            urlBox.Text.Trim(), Tracks.ToList(), Http, MakeImportProgress());
+        HandleImportResult(error);
+    }
 
+    private Progress<(int current, int total, string trackName)> MakeImportProgress()
+        => new(p => AppendLog($"  Converting {p.current}/{p.total}: {p.trackName}"));
+
+    private void HandleImportResult(string? error)
+    {
         if (error is not null)
         {
             AppendLog($"[WARN] {error}");
@@ -1217,7 +1206,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
 
-        var req = new ApplyRequest(_romPath, _outputDir, tracks, OverwriteMode.Overwrite, OutputBaseName?.Trim(), resolvedSpritePath);
+        var req = new ApplyRequest(_romPath, _outputDir, tracks, OverwriteMode.Ask, OutputBaseName?.Trim(), resolvedSpritePath);
 
         var progress = new Progress<(string step, int current, int total)>(p =>
         {
@@ -1227,7 +1216,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            var result = await _applyEngine.RunAsync(req, progress);
+            var result = await _applyEngine.RunAsync(req, progress, _closeCts.Token);
 
             ProgressSection.Visibility = Visibility.Collapsed;
             ApplyProgress.Value = 100;
@@ -1276,10 +1265,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void Apply_Click(object sender, RoutedEventArgs e) => await ApplyCoreAsync();
 
-    private async void ApplyAndLaunch_Click(object sender, RoutedEventArgs e)
+    private async void AutoLaunch_Click(object sender, RoutedEventArgs e)
     {
-        bool ok = await ApplyCoreAsync();
-        if (ok) await LaunchRomCoreAsync();
+        bool hasTracker = !string.IsNullOrEmpty(_trackerUrl);
+        bool hasArchipelago = !string.IsNullOrEmpty(_sniPath) || !string.IsNullOrEmpty(_archipelagoLauncherPath);
+
+        var dialog = new AutoLaunchDialog(hasTracker, hasArchipelago) { Owner = this };
+        if (dialog.ShowDialog() == true)
+            await LaunchRomCoreAsync(dialog.SelectedOption);
     }
 
     // ── Conflict Modal ────────────────────────────────────────────────────
@@ -1288,9 +1281,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Dispatcher.Invoke(() =>
         {
             var names = string.Join("\n", e.Conflicts.Select(c => $"  • {c.FileName}"));
-            string msg = $"The following files already exist in the output folder:\n\n{names}\n\nWhat would you like to do?";
+            string msg = $"The output folder already has music files:\n\n{names}\n\n"
+                       + "Yes = Overwrite with new tracks\n"
+                       + "No = Keep existing tracks (skip)\n"
+                       + "Cancel = Abort apply";
 
-            var result = MessageBox.Show(msg, "Files Already Exist",
+            var result = MessageBox.Show(msg, "Existing Music Files",
                 MessageBoxButton.YesNoCancel,
                 MessageBoxImage.Question,
                 MessageBoxResult.Cancel,
@@ -1408,59 +1404,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (!entry.NeedsConversion)
         {
-            // PCM or valid cache — assign directly
-            string pcmPath = entry.AssignablePath;
-            string? err = PcmValidator.Validate(pcmPath);
-            slot.PcmPath = pcmPath;
-            slot.ValidationError = err;
-
-            AppendLog(err is null
-                ? $"Slot {slot.SlotNumber} assigned from library: {entry.Name}"
-                : $"[WARN] Slot {slot.SlotNumber}: {err}");
-
-            SetDirty();
+            ValidateAndAssignPcm(entry.AssignablePath, slot, entry.Name);
         }
         else
         {
-            // Convert and cache
             if (_library.LibraryFolder is null) return;
             string cacheDir = Path.Combine(_library.LibraryFolder, "_cache");
             Directory.CreateDirectory(cacheDir);
             string destPath = _library.GetCacheTargetPath(entry.SourcePath);
 
-            AppendLog($"[Slot {slot.SlotNumber}] Converting and caching: {entry.Name}...");
-
-            _isConverting = true;
-            OnPropertyChanged(nameof(CanApply));
-            OnPropertyChanged(nameof(CanExportPack));
-            try
+            bool ok = await ConvertAndAssignPcmAsync(entry.SourcePath, destPath, slot);
+            if (ok)
             {
-                string? err = await PcmConverter.ConvertAsync(entry.SourcePath, destPath);
-                if (err is not null)
-                {
-                    AppendLog($"[ERROR] Slot {slot.SlotNumber}: {err}");
-                    return;
-                }
-
-                string? valErr = PcmValidator.Validate(destPath);
-                slot.PcmPath = destPath;
-                slot.ValidationError = valErr;
-
                 _library.Refresh();
                 OnPropertyChanged(nameof(LibrarySongCount));
-                AppendLog($"[Slot {slot.SlotNumber}] Cached + assigned: {entry.Name}");
-                SetDirty();
-            }
-            finally
-            {
-                _isConverting = false;
-                OnPropertyChanged(nameof(CanApply));
-                OnPropertyChanged(nameof(CanExportPack));
             }
         }
-
-        OnPropertyChanged(nameof(AssignedCountText));
-        OnPropertyChanged(nameof(CanApply));
     }
 
     // ── Settings ──────────────────────────────────────────────────────────
@@ -1477,6 +1436,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             EmulatorPath        = _emulatorPath        ?? string.Empty,
             ConnectorScriptPath = _connectorScriptPath ?? string.Empty,
             SniPath             = _sniPath             ?? string.Empty,
+            ArchipelagoLauncherPath = _archipelagoLauncherPath ?? string.Empty,
             TrackerUrl          = _trackerUrl          ?? string.Empty,
             SeedUrl             = _seedUrl             ?? string.Empty,
         });
@@ -1563,16 +1523,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SpritePreviewUrl = cachePath;
             SaveAutoState();
         }
-        catch { /* best-effort — URL still shows in the current session */ }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[WARN] Sprite preview cache failed: {ex.Message}");
+        }
     }
 
     // ── Random sprite resolution ──────────────────────────────────────────
 
-    private static readonly System.Net.Http.HttpClient _randomHttp =
-        new() { Timeout = TimeSpan.FromSeconds(30) };
-
-    private static readonly System.Text.Json.JsonSerializerOptions _randomJsonOpts =
-        new() { PropertyNameCaseInsensitive = true };
+    private static readonly System.Text.Json.JsonSerializerOptions _randomJsonOpts = Services.JsonDefaults.ReadOnly;
 
     /// <summary>
     /// Picks a random sprite from the cached list (or fetches from network),
@@ -1592,7 +1551,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             else
             {
                 AppendLog("Fetching sprite list for random selection…");
-                var json = await _randomHttp.GetStringAsync("https://alttpr.com/sprites");
+                var json = await Http.GetStringAsync("https://alttpr.com/sprites");
                 sprites = System.Text.Json.JsonSerializer.Deserialize<List<Models.SpriteEntry>>(json, _randomJsonOpts);
             }
 
@@ -1627,7 +1586,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (!File.Exists(localPath))
             {
                 AppendLog($"Downloading random sprite: {picked.Name}…");
-                var data = await _randomHttp.GetByteArrayAsync(picked.File);
+                var data = await Http.GetByteArrayAsync(picked.File);
                 await File.WriteAllBytesAsync(localPath, data);
             }
 
@@ -1713,6 +1672,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (dlg.ShowDialog(this) == true) SniPath = dlg.FileName;
     }
 
+    private void BrowseArchipelago_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new OpenFileDialog
+        {
+            Title = "Select ArchipelagoLauncher.exe",
+            Filter = "EXE (*.exe)|*.exe|All Files (*.*)|*.*",
+            CheckFileExists = true
+        };
+        if (dlg.ShowDialog(this) == true) ArchipelagoLauncherPath = dlg.FileName;
+    }
+
     private void TrackerCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (sender is ComboBox combo && combo.SelectedItem is ComboBoxItem item)
@@ -1723,34 +1693,69 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (!string.IsNullOrEmpty(TrackerUrl))
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                { FileName = TrackerUrl, UseShellExecute = true });
+                { FileName = TrackerUrl, UseShellExecute = true })?.Dispose();
     }
 
     // ── Launch ────────────────────────────────────────────────────────────
-    private async Task LaunchRomCoreAsync()
+    private async Task LaunchRomCoreAsync(AutoLaunchOption option)
     {
         if (_lastOutputRomPath is null || !File.Exists(_lastOutputRomPath)) return;
 
-        // 1. Start SNI if configured and not already running
+        if (option is AutoLaunchOption.ArchipelagoOnly or AutoLaunchOption.ArchipelagoAndTracker)
+            await LaunchArchipelagoAsync();
+
+        if (option is AutoLaunchOption.TrackerOnly or AutoLaunchOption.ArchipelagoAndTracker)
+            LaunchTracker();
+
+        LaunchEmulator();
+    }
+
+    private async Task LaunchArchipelagoAsync()
+    {
+        // Start SNI if configured and not already running
         if (!string.IsNullOrEmpty(_sniPath) && File.Exists(_sniPath))
         {
-            bool sniRunning = System.Diagnostics.Process
-                .GetProcessesByName(Path.GetFileNameWithoutExtension(_sniPath)).Length > 0;
+            var procs = System.Diagnostics.Process.GetProcessesByName(Path.GetFileNameWithoutExtension(_sniPath));
+            bool sniRunning = procs.Length > 0;
+            foreach (var p in procs) p.Dispose();
+
             if (!sniRunning)
             {
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                    { FileName = _sniPath, UseShellExecute = true });
+                    { FileName = _sniPath, UseShellExecute = true })?.Dispose();
                 await System.Threading.Tasks.Task.Delay(1000); // let SNI initialize
                 AppendLog("SNI started.");
             }
         }
 
-        // 2. Open tracker in browser
-        if (!string.IsNullOrEmpty(_trackerUrl))
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                { FileName = _trackerUrl, UseShellExecute = true });
+        // Start Archipelago Launcher if configured and not already running
+        if (!string.IsNullOrEmpty(_archipelagoLauncherPath) && File.Exists(_archipelagoLauncherPath))
+        {
+            var procs = System.Diagnostics.Process.GetProcessesByName(Path.GetFileNameWithoutExtension(_archipelagoLauncherPath));
+            bool archRunning = procs.Length > 0;
+            foreach (var p in procs) p.Dispose();
 
-        // 3. Launch emulator or fallback to default file handler
+            if (!archRunning)
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    { FileName = _archipelagoLauncherPath, UseShellExecute = true })?.Dispose();
+                AppendLog("Archipelago Launcher started.");
+            }
+        }
+    }
+
+    private void LaunchTracker()
+    {
+        if (!string.IsNullOrEmpty(_trackerUrl))
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                { FileName = _trackerUrl, UseShellExecute = true })?.Dispose();
+            AppendLog("Tracker opened.");
+        }
+    }
+
+    private void LaunchEmulator()
+    {
         try
         {
             if (!string.IsNullOrEmpty(_emulatorPath) && File.Exists(_emulatorPath))
@@ -1761,19 +1766,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     args.Append($"--lua=\"{_connectorScriptPath}\" ");
                 args.Append($"\"{_lastOutputRomPath}\"");
 
+                var dir = Path.GetDirectoryName(_emulatorPath);
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = _emulatorPath,
                     Arguments = args.ToString(),
-                    WorkingDirectory = Path.GetDirectoryName(_emulatorPath)!,
+                    WorkingDirectory = dir ?? "",
                     UseShellExecute = false
-                });
+                })?.Dispose();
                 AppendLog($"Launched: {Path.GetFileName(_emulatorPath)}");
             }
             else
             {
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                    { FileName = _lastOutputRomPath, UseShellExecute = true });
+                    { FileName = _lastOutputRomPath, UseShellExecute = true })?.Dispose();
                 AppendLog($"Launched: {Path.GetFileName(_lastOutputRomPath)}");
             }
         }
@@ -1782,8 +1788,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             AppendLog($"[ERROR] Launch failed: {ex.Message}");
         }
     }
-
-    private async void LaunchRom_Click(object sender, RoutedEventArgs e) => await LaunchRomCoreAsync();
 
     // ── Log ───────────────────────────────────────────────────────────────
     private void AppendLog(string line)
@@ -1801,9 +1805,28 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? name = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
+    /// <summary>
+    /// Wraps an async Task action so exceptions are logged instead of silently lost
+    /// in async void event handlers (e.g. MenuItem.Click lambdas).
+    /// </summary>
+    private async Task SafeAsync(Func<Task> action)
+    {
+        try
+        {
+            await action();
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"[ERROR] {ex.Message}");
+        }
+    }
+
     // ── Cleanup ───────────────────────────────────────────────────────────
     protected override void OnClosed(EventArgs e)
     {
+        _closeCts.Cancel();
+        _closeCts.Dispose();
+        _applyEngine.ConflictsDetected -= OnConflictsDetected;
         _audio.Dispose();
         base.OnClosed(e);
     }

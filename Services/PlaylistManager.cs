@@ -6,18 +6,12 @@ namespace LTTPEnhancementTools.Services;
 
 public static class PlaylistManager
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNameCaseInsensitive = true
-    };
-
     public static (Playlist? playlist, string? error) Load(string filePath)
     {
         try
         {
             string json = File.ReadAllText(filePath);
-            var playlist = JsonSerializer.Deserialize<Playlist>(json, JsonOptions);
+            var playlist = JsonSerializer.Deserialize<Playlist>(json, JsonDefaults.Standard);
             if (playlist is null)
                 return (null, "Playlist file is empty or malformed.");
             if (playlist.Version != 1)
@@ -39,7 +33,7 @@ public static class PlaylistManager
                 .ToDictionary(kv => kv.Key, kv => kv.Value.Replace('\\', '/'));
             playlist.Tracks = normalizedTracks;
 
-            string json = JsonSerializer.Serialize(playlist, JsonOptions);
+            string json = JsonSerializer.Serialize(playlist, JsonDefaults.Standard);
             File.WriteAllText(filePath, json);
             return null;
         }

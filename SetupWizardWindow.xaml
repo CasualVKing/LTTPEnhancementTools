@@ -60,7 +60,7 @@
 
             <!-- Step 0: Welcome -->
             <StackPanel x:Name="Step0" Visibility="Visible">
-                <TextBlock Style="{StaticResource StepLabel}" Text="STEP 1 OF 4"/>
+                <TextBlock Style="{StaticResource StepLabel}" Text="STEP 1 OF 5"/>
                 <TextBlock Style="{StaticResource StepTitle}" Text="Welcome to LTTP Enhancement Tools"/>
                 <TextBlock Style="{StaticResource StepDescription}">
                     This wizard will help you configure the one-click launch feature.
@@ -78,7 +78,7 @@
 
             <!-- Step 1: Emulator -->
             <StackPanel x:Name="Step1" Visibility="Collapsed">
-                <TextBlock Style="{StaticResource StepLabel}" Text="STEP 2 OF 4"/>
+                <TextBlock Style="{StaticResource StepLabel}" Text="STEP 2 OF 5"/>
                 <TextBlock Style="{StaticResource StepTitle}" Text="Emulator"/>
                 <TextBlock Style="{StaticResource StepDescription}">
                     Select your SNES emulator executable. BizHawk is recommended
@@ -100,7 +100,7 @@
 
             <!-- Step 2: Connector Script -->
             <StackPanel x:Name="Step2" Visibility="Collapsed">
-                <TextBlock Style="{StaticResource StepLabel}" Text="STEP 3 OF 4"/>
+                <TextBlock Style="{StaticResource StepLabel}" Text="STEP 3 OF 5"/>
                 <TextBlock Style="{StaticResource StepTitle}" Text="Archipelago Connector Script"/>
                 <TextBlock Style="{StaticResource StepDescription}">
                     (Optional) If you play Archipelago, select the Lua connector script
@@ -122,9 +122,35 @@
                 </Grid>
             </StackPanel>
 
-            <!-- Step 3: SNI + Tracker -->
+            <!-- Step 3: Archipelago Launcher -->
             <StackPanel x:Name="Step3" Visibility="Collapsed">
-                <TextBlock Style="{StaticResource StepLabel}" Text="STEP 4 OF 4"/>
+                <TextBlock Style="{StaticResource StepLabel}" Text="STEP 4 OF 5"/>
+                <TextBlock Style="{StaticResource StepTitle}" Text="Archipelago Launcher"/>
+                <TextBlock Style="{StaticResource StepDescription}">
+                    (Optional) If you play Archipelago multiworld, select
+                    <Run FontWeight="SemiBold">ArchipelagoLauncher.exe</Run>
+                    from your Archipelago install folder.
+                    It will be opened automatically at launch so you can connect to your room.
+                    <LineBreak/><LineBreak/>
+                    Typically found at: <Run Foreground="{StaticResource TextMutedBrush}">C:\ProgramData\Archipelago\ArchipelagoLauncher.exe</Run>
+                </TextBlock>
+                <TextBlock Style="{StaticResource FieldLabel}" Text="ArchipelagoLauncher.exe  —  leave blank to skip"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="ArchipelagoPathBox" Grid.Column="0" Style="{StaticResource DarkTextBox}"
+                             Text="{Binding ArchipelagoLauncherPath, UpdateSourceTrigger=PropertyChanged}"/>
+                    <Button Grid.Column="2" Content="Browse…" Style="{StaticResource DarkButton}"
+                            Click="BrowseArchipelago_Click" Padding="12,5"/>
+                </Grid>
+            </StackPanel>
+
+            <!-- Step 4: SNI + Tracker -->
+            <StackPanel x:Name="Step4" Visibility="Collapsed">
+                <TextBlock Style="{StaticResource StepLabel}" Text="STEP 5 OF 5"/>
                 <TextBlock Style="{StaticResource StepTitle}" Text="SNI &amp; Tracker"/>
                 <TextBlock Style="{StaticResource StepDescription}">
                     (Optional) SNI bridges your emulator to Archipelago's multiworld server.

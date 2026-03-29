@@ -17,7 +17,7 @@ namespace LTTPEnhancementTools;
 public partial class SpriteBrowserWindow : Window
 {
     // ── Static shared state ───────────────────────────────────────────────
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
+    private static readonly HttpClient Http = Services.SharedHttp.Client;
     private static List<SpriteEntry>? _cachedSprites;
 
     private static readonly string CacheDir = Path.Combine(
@@ -43,8 +43,7 @@ public partial class SpriteBrowserWindow : Window
     /// <summary>Sentinel stored as SpritePath when "Random Favorites" is chosen. Resolved to a real sprite at apply time.</summary>
     public const string RandomFavoritesSentinel = "__random_favorites__";
 
-    private static readonly JsonSerializerOptions JsonOptions =
-        new() { PropertyNameCaseInsensitive = true };
+    private static readonly JsonSerializerOptions JsonOptions = Services.JsonDefaults.ReadOnly;
 
     private const string SpritesApiUrl = "https://alttpr.com/sprites";
 

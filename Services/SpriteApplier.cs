@@ -143,7 +143,21 @@ public static class SpriteApplier
                 return "Unsupported sprite format.";
             }
 
-            File.WriteAllBytes(romDestPath, rom);
+            // Write to a temp file first, then replace atomically to avoid
+            // leaving a corrupt ROM if the write is interrupted (disk full, I/O error).
+            string tempPath = romDestPath + ".tmp";
+            try
+            {
+                File.WriteAllBytes(tempPath, rom);
+                File.Move(tempPath, romDestPath, overwrite: true);
+            }
+            catch
+            {
+                // Clean up the temp file on failure
+                try { File.Delete(tempPath); } catch { }
+                throw;
+            }
+
             return null; // success
         }
         catch (Exception ex)

@@ -10,6 +10,7 @@ namespace LTTPEnhancementTools.Services;
 public class AudioPlayer : IDisposable
 {
     private WaveOutEvent? _output;
+    private RawSourceWaveStream? _waveStream;
     private FileStream? _stream;
     private bool _disposed;
 
@@ -35,12 +36,10 @@ public class AudioPlayer : IDisposable
                 var waveStream = new RawSourceWaveStream(stream, waveFormat);
 
                 _stream = stream;
+                _waveStream = waveStream;
                 _output = new WaveOutEvent();
                 _output.Init(waveStream);
-                _output.PlaybackStopped += (_, _) =>
-                {
-                    PlaybackStopped?.Invoke(this, EventArgs.Empty);
-                };
+                _output.PlaybackStopped += OnOutputPlaybackStopped;
                 _output.Play();
                 return null;
             }
@@ -65,10 +64,19 @@ public class AudioPlayer : IDisposable
         DisposePlayback();
     }
 
+    private void OnOutputPlaybackStopped(object? sender, StoppedEventArgs args)
+        => PlaybackStopped?.Invoke(this, EventArgs.Empty);
+
     private void DisposePlayback()
     {
-        _output?.Dispose();
-        _output = null;
+        if (_output is not null)
+        {
+            _output.PlaybackStopped -= OnOutputPlaybackStopped;
+            _output.Dispose();
+            _output = null;
+        }
+        _waveStream?.Dispose();
+        _waveStream = null;
         _stream?.Dispose();
         _stream = null;
     }

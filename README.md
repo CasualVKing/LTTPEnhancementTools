@@ -33,17 +33,19 @@ A Windows desktop utility for enhancing **A Link to the Past Randomizer** runs. 
 - **Reset to default** — selecting "Link" in the browser clears any custom sprite and restores the default
 - **Sprite preview** — the selected sprite thumbnail is shown at the top of the window at all times; random selection shows a gold **?** or **?★** placeholder
 
-### Archipelago / One-Click Launch
-- **Setup Wizard** — on first run a 4-step wizard walks you through configuring your emulator, Archipelago connector script, SNI, and community tracker
-- **One-click launch** — after applying, a single **Launch ROM** button starts SNI, opens your community tracker in the browser, and launches the emulator with the ROM and Lua connector pre-loaded
+### Auto Launch
+- **Setup Wizard** — on first run a 5-step wizard walks you through configuring your emulator, Archipelago connector script, Archipelago Launcher, SNI, and community tracker
+- **Auto Launch dialog** — after applying, click **Auto Launch** to choose what to start: **Tracker Only**, **Archipelago Only**, or **Archipelago + Tracker**; the emulator always launches with your ROM
 - **BizHawk integration** — auto-passes `--lua=<connector>` before the ROM path so the Archipelago Lua script starts automatically
 - **SNI auto-start** — SNI.exe is started before the emulator if it isn't already running
-- **Community tracker** — choose Dunka's Tracker or alttprtracker.com from a dropdown; opens in the browser on every launch
+- **Community tracker** — choose Dunka's Tracker or alttprtracker.com from a dropdown; opens in the browser on launch
 - **Re-run wizard** — reconfigure any path at any time via the **⚙ Run Setup Wizard…** button in Launch Settings
 
 ### General
 - **Output file renaming** — customize the base name used for all output files (e.g. `mypack.sfc`, `mypack.msu`, `mypack-2.pcm`)
 - **Dedicated output folder** — a persistent `Output/` folder next to the app holds all generated packs; change it any time via Browse; 🗑 button clears the folder when you're done
+- **Randomized ROM validation** — blocks vanilla (1 MB) ROMs and requires a randomized (2 MB) ROM to ensure MSU-1 compatibility
+- **Smart music conflict handling** — when applying to a folder with existing PCM files, choose to overwrite, skip, or cancel; ROM and `.msu` files are always updated silently
 - **One-click pack assembly** — copies the ROM, generates the `.msu` marker file, and writes all numbered `.pcm` files
 - **Sprite-only apply** — apply just a Link sprite to a ROM with no music changes required
 - **Auto-save session** — your last ROM, sprite, and playlist are remembered and restored on next launch
@@ -84,7 +86,7 @@ On first launch a wizard appears to configure your launch settings:
 You can skip the wizard and configure paths later from the **Launch Settings** panel, or re-run it at any time with the **⚙ Run Setup Wizard…** button.
 
 ### 2. Select your ROM
-Click **Select ROM** and pick your ALttP Randomizer `.sfc` or `.smc` file.
+Click **Select ROM** and pick your ALttP Randomizer `.sfc` or `.smc` file. The tool requires a randomized (2 MB) ROM — vanilla ROMs are blocked with a helpful message directing you to generate a randomized ROM first.
 
 ### 3. (Optional) Set a Link Sprite
 In the sprite header at the top:
@@ -128,21 +130,23 @@ The app automatically creates an `Output/` folder next to its executable. Click 
 The **Output Base Name** field controls the filename stem (auto-fills from your ROM filename).
 
 ### 7. Apply
-Click **Apply to ROM**. The app will:
+Click **Apply ROM**. The app will:
 1. Copy your ROM to the output folder
 2. Apply the selected Link sprite (if any)
 3. Create the required empty `.msu` marker file
 4. Write all assigned `.pcm` files with the correct numbered names
 
+If the output folder already has music files, you'll be asked whether to overwrite them, keep the existing files, or cancel.
+
 You can apply with just a sprite, just music, or both.
 
-### 8. Launch
-After a successful apply, click **Launch ROM**. The app will:
-1. Start **SNI.exe** (if configured and not already running)
-2. Open your selected **community tracker** in the browser
-3. Launch the **emulator** with the ROM and Lua connector script
+### 8. Auto Launch
+After a successful apply, click **Auto Launch** to open the launch dialog. Choose from:
+- **Tracker Only** — opens your community tracker in the browser + launches the emulator
+- **Archipelago Only** — starts SNI + Archipelago Launcher + launches the emulator
+- **Archipelago + Tracker** — all of the above
 
-If no emulator is configured, the ROM opens in whatever app is associated with `.sfc` files on your system.
+The emulator always launches with the ROM (and Lua connector script if configured). If no emulator is configured, the ROM opens in whatever app is associated with `.sfc` files on your system.
 
 ---
 
@@ -259,7 +263,8 @@ LTTPEnhancementTools/
 │   ├── SettingsManager.cs        # Persist AppSettings to %LocalAppData%
 │   ├── OriginalSoundtrackManager.cs # Import/match/convert/cache original OST
 │   ├── LaunchSettings.cs         # Launch settings (emulator, SNI, tracker)
-│   └── LaunchSettingsManager.cs  # Persist LaunchSettings to %LocalAppData%
+│   ├── LaunchSettingsManager.cs  # Persist LaunchSettings to %LocalAppData%
+│   └── JsonDefaults.cs           # Shared JSON serializer options + HttpClient
 ├── Converters/
 │   └── ValueConverters.cs        # WPF value converters
 ├── Resources/
@@ -272,6 +277,7 @@ LTTPEnhancementTools/
 ├── MainWindow.xaml / MainWindow.xaml.cs
 ├── SetupWizardWindow.xaml / SetupWizardWindow.xaml.cs
 ├── SpriteBrowserWindow.xaml / SpriteBrowserWindow.xaml.cs
+├── AutoLaunchDialog.xaml / AutoLaunchDialog.xaml.cs
 ├── LTTPEnhancementTools.csproj
 ├── setup.iss                     # Inno Setup installer script
 └── publish.bat                   # One-command build + package script

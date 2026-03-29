@@ -19,7 +19,7 @@ public static class FavoritesManager
             var json = File.ReadAllText(FilePath);
             return JsonSerializer.Deserialize<HashSet<string>>(json) ?? new();
         }
-        catch { return new(); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[FavoritesManager] Load failed: {ex.Message}"); return new(); }
     }
 
     public static void Save(HashSet<string> favorites)
@@ -29,6 +29,6 @@ public static class FavoritesManager
             Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
             File.WriteAllText(FilePath, JsonSerializer.Serialize(favorites));
         }
-        catch { }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[FavoritesManager] Save failed: {ex.Message}"); }
     }
 }

@@ -9,11 +9,7 @@ public record BundleExportResult(int TracksWritten, int TracksSkipped);
 
 public static class PlaylistBundleManager
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNameCaseInsensitive = true
-    };
+    private static readonly JsonSerializerOptions JsonOptions = JsonDefaults.Standard;
 
     // ── Export ────────────────────────────────────────────────────────────
 

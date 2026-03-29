@@ -17,6 +17,7 @@ public partial class SetupWizardWindow : Window, INotifyPropertyChanged
     private string? _emulatorPath;
     private string? _connectorScriptPath;
     private string? _sniPath;
+    private string? _archipelagoLauncherPath;
     private string? _trackerUrl;
 
     public string? EmulatorPath
@@ -33,6 +34,11 @@ public partial class SetupWizardWindow : Window, INotifyPropertyChanged
     {
         get => _sniPath;
         set { _sniPath = value; OnPropertyChanged(); }
+    }
+    public string? ArchipelagoLauncherPath
+    {
+        get => _archipelagoLauncherPath;
+        set { _archipelagoLauncherPath = value; OnPropertyChanged(); }
     }
     public string? TrackerUrl
     {
@@ -54,10 +60,11 @@ public partial class SetupWizardWindow : Window, INotifyPropertyChanged
             EmulatorPath        = existing.EmulatorPath.NullIfEmpty();
             ConnectorScriptPath = existing.ConnectorScriptPath.NullIfEmpty();
             SniPath             = existing.SniPath.NullIfEmpty();
+            ArchipelagoLauncherPath = existing.ArchipelagoLauncherPath.NullIfEmpty();
             TrackerUrl          = existing.TrackerUrl.NullIfEmpty();
         }
 
-        _stepPanels = [Step0, Step1, Step2, Step3];
+        _stepPanels = [Step0, Step1, Step2, Step3, Step4];
         ShowStep(0);
     }
 
@@ -113,6 +120,7 @@ public partial class SetupWizardWindow : Window, INotifyPropertyChanged
             EmulatorPath        = _emulatorPath        ?? string.Empty,
             ConnectorScriptPath = _connectorScriptPath ?? string.Empty,
             SniPath             = _sniPath             ?? string.Empty,
+            ArchipelagoLauncherPath = _archipelagoLauncherPath ?? string.Empty,
             TrackerUrl          = _trackerUrl          ?? string.Empty,
         };
         LaunchSettingsManager.Save(Result);
@@ -151,6 +159,17 @@ public partial class SetupWizardWindow : Window, INotifyPropertyChanged
             CheckFileExists = true
         };
         if (dlg.ShowDialog(this) == true) SniPath = dlg.FileName;
+    }
+
+    private void BrowseArchipelago_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new OpenFileDialog
+        {
+            Title = "Select ArchipelagoLauncher.exe",
+            Filter = "EXE (*.exe)|*.exe|All Files (*.*)|*.*",
+            CheckFileExists = true
+        };
+        if (dlg.ShowDialog(this) == true) ArchipelagoLauncherPath = dlg.FileName;
     }
 
     private void WizardTrackerCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)

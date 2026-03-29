@@ -75,7 +75,6 @@
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
                     <Button Grid.Column="0"
@@ -92,7 +91,7 @@
                                HorizontalAlignment="Center"/>
 
                     <Button Grid.Column="2"
-                            Content="Apply to ROM"
+                            Content="Apply ROM"
                             Style="{StaticResource AccentButton}"
                             Padding="14,6"
                             Margin="0,0,8,0"
@@ -100,21 +99,12 @@
                             Click="Apply_Click"/>
 
                     <Button Grid.Column="3"
-                            Content="Apply &amp; Launch"
-                            Style="{StaticResource AccentButton}"
-                            Padding="14,6"
-                            Margin="0,0,8,0"
-                            IsEnabled="{Binding CanApply}"
-                            Click="ApplyAndLaunch_Click"/>
-
-                    <Button Grid.Column="4"
-                            Content="Launch ROM ▶"
+                            Content="Auto Launch"
                             Style="{StaticResource DarkButton}"
                             Padding="12,6"
                             IsEnabled="{Binding CanLaunch}"
-                            Visibility="{Binding CanLaunch, Converter={StaticResource BoolToVis}}"
-                            Click="LaunchRom_Click"
-                            ToolTip="Open the output ROM with your configured emulator"/>
+                            Click="AutoLaunch_Click"
+                            ToolTip="Launch the output ROM with companion tools"/>
                 </Grid>
 
                 <!-- Success message -->
@@ -563,6 +553,7 @@
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="120"/>
@@ -627,14 +618,33 @@
                                             Margin="0,0,0,6"
                                             Click="BrowseSni_Click"/>
 
-                                    <!-- Seed URL -->
+                                    <!-- Archipelago Launcher -->
                                     <TextBlock Grid.Row="3" Grid.Column="0"
-                                               Text="Seed URL"
+                                               Text="Archipelago"
                                                FontSize="12"
                                                Foreground="{StaticResource TextMutedBrush}"
                                                VerticalAlignment="Center"
-                                               ToolTip="Your alttpr.com seed link — saved for reference"/>
-                                    <TextBox Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2"
+                                               Margin="0,0,0,6"
+                                               ToolTip="ArchipelagoLauncher.exe — started automatically so you can connect to your room&#x0a;Typically at: C:\ProgramData\Archipelago\ArchipelagoLauncher.exe"/>
+                                    <TextBox Grid.Row="3" Grid.Column="1"
+                                             Style="{StaticResource DarkTextBox}"
+                                             Text="{Binding ArchipelagoLauncherPath, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                             Margin="0,0,6,6"/>
+                                    <Button Grid.Row="3" Grid.Column="2"
+                                            Content="Browse"
+                                            Style="{StaticResource DarkButton}"
+                                            Padding="8,4"
+                                            Margin="0,0,0,6"
+                                            Click="BrowseArchipelago_Click"/>
+
+                                    <!-- Room ID -->
+                                    <TextBlock Grid.Row="4" Grid.Column="0"
+                                               Text="Room ID"
+                                               FontSize="12"
+                                               Foreground="{StaticResource TextMutedBrush}"
+                                               VerticalAlignment="Center"
+                                               ToolTip="Your Archipelago room address (e.g. archipelago.gg:12345) — saved for reference"/>
+                                    <TextBox Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2"
                                              Style="{StaticResource DarkTextBox}"
                                              Text="{Binding SeedUrl, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
                                 </Grid>

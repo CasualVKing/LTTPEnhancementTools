@@ -4,6 +4,53 @@ All notable changes to ALttP Enhancement Tools are documented here.
 
 ---
 
+## [2.4.0] — 2026-03-28
+
+### Added
+- **Auto Launch dialog** — replaces the old "Apply & Launch" and "Launch ROM" buttons with a single **Auto Launch** button that opens a dialog to choose: Tracker Only, Archipelago Only, or Archipelago + Tracker; the emulator always launches alongside your selection
+- **Vanilla ROM blocking** — selecting a vanilla (1 MB) ROM now shows a warning and blocks it; only randomized (2 MB) ROMs are accepted, ensuring MSU-1 compatibility
+- **Smart music conflict handling** — applying to a folder with existing PCM files now prompts you to overwrite, keep existing tracks, or cancel; ROM and `.msu` files are always updated silently (no unnecessary prompts)
+- **Shared utilities** — new `JsonDefaults` and `SharedHttp` classes consolidate duplicate `JsonSerializerOptions` (was in 6 files) and `HttpClient` instances (was in 3 files)
+- **Unit tests** — new test project with 42 tests covering PcmValidator, OriginalSoundtrackManager matching, and TrackSlot model
+
+### Changed
+- **Bottom action bar** — streamlined from 4 buttons (Select ROM, Apply to ROM, Apply & Launch, Launch ROM) to 3 (Select ROM, Apply ROM, Auto Launch)
+- **Launch logic refactored** — split monolithic launch method into composable `LaunchArchipelagoAsync`, `LaunchTracker`, and `LaunchEmulator` methods
+- **PCM assignment deduplicated** — extracted shared `ValidateAndAssignPcm` and `ConvertAndAssignPcmAsync` helpers, replacing ~100 lines of duplicate logic
+
+### Fixed
+- **ROM overwrite bug** — ROM and `.msu` files now always use `overwrite: true` regardless of conflict dialog choice; previously could throw if user picked "Skip" for PCMs
+- **Process handle leaks** — all `Process.Start()` and `GetProcessesByName()` calls now properly dispose returned `Process` objects
+- **Async void exception loss** — `PickPcmForSlot` changed from `async void` to `async Task` wrapped with `SafeAsync` error handler
+- **Window close cancellation** — long-running apply operations now cancel when the window closes instead of continuing in the background
+- **Empty catch blocks** — persistence managers (Settings, LaunchSettings, AutoSave, Favorites) now log failures via `Debug.WriteLine` instead of silently swallowing exceptions
+- **Null-forgiving operator** — removed unsafe `Path.GetDirectoryName(...)!` in `LaunchEmulator`, replaced with null-coalescing fallback
+
+---
+
+## [2.3.0] — 2026-03-14
+
+### Added
+- **Original soundtrack preview** — import the original ALttP soundtrack from a folder, ZIP, or URL; files are auto-matched to slots and converted to MSU-1 PCM; click **♪** to preview
+- **Track type labels** — each slot shows **[SFX]** or **[EXT]** badges for jingles and extended tracks
+- **Smart OST matching** — 84-entry alias table maps common OST names to the correct MSU slots; 4-pass matching (alias → leading number → any number → fuzzy name)
+
+---
+
+## [2.2.0] — 2026-03-07
+
+### Added
+- **Random sprite selection** — choose Random All or Random Favorites from the sprite browser; the actual sprite is picked at apply time as a surprise
+
+---
+
+## [2.1.0] — 2026-02-28
+
+### Changed
+- **Branding update** — new logo, icon, and header redesign
+
+---
+
 ## [2.0.0] — 2026-02-24
 
 ### Added

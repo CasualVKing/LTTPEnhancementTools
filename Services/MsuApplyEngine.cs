@@ -72,19 +72,17 @@ public class ApplyEngine
                            dest: Path.Combine(req.OutputDir, $"{baseName}-{kv.Key}.pcm")))
             .ToList();
 
-        // STEP 3 — Conflict detection
+        // STEP 3 — Conflict detection (only prompt for PCM files; ROM + .msu always overwrite)
         progress.Report(("Checking for conflicts...", 1, totalSteps));
-        var allDests = new List<ApplyConflict>();
-        allDests.Add(new(Path.GetFileName(romDest), romDest));
-        allDests.Add(new(Path.GetFileName(msuDest), msuDest));
-        allDests.AddRange(pcmDests.Select(p => new ApplyConflict(Path.GetFileName(p.dest), p.dest)));
-
-        var conflicts = allDests.Where(d => File.Exists(d.DestPath)).ToList();
+        var pcmConflicts = pcmDests
+            .Where(p => File.Exists(p.dest))
+            .Select(p => new ApplyConflict(Path.GetFileName(p.dest), p.dest))
+            .ToList();
 
         OverwriteMode effectiveMode = req.OverwriteMode;
-        if (conflicts.Count > 0 && req.OverwriteMode == OverwriteMode.Ask)
+        if (pcmConflicts.Count > 0 && req.OverwriteMode == OverwriteMode.Ask)
         {
-            var args = new ConflictsDetectedEventArgs(conflicts);
+            var args = new ConflictsDetectedEventArgs(pcmConflicts);
             ConflictsDetected?.Invoke(this, args);
             await args.ResolutionTask; // wait for UI to respond
             effectiveMode = args.Resolution;
@@ -96,7 +94,7 @@ public class ApplyEngine
         var skipPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (effectiveMode == OverwriteMode.Skip)
         {
-            foreach (var c in conflicts) skipPaths.Add(c.DestPath);
+            foreach (var c in pcmConflicts) skipPaths.Add(c.DestPath);
         }
 
         // STEP 4 — Create directory
@@ -105,17 +103,14 @@ public class ApplyEngine
 
         var filesWritten = new List<string>();
 
-        // STEP 5 — Copy ROM
+        // STEP 5 — Copy ROM (always overwrite — excluded from conflict detection)
         progress.Report(("Copying ROM...", 3, totalSteps));
-        if (!skipPaths.Contains(romDest))
-        {
-            await Task.Run(() => File.Copy(req.RomSourcePath, romDest, overwrite: effectiveMode == OverwriteMode.Overwrite), ct);
-            filesWritten.Add(romDest);
-        }
+        await Task.Run(() => File.Copy(req.RomSourcePath, romDest, overwrite: true), ct);
+        filesWritten.Add(romDest);
 
         // STEP 6 (optional) — Apply sprite to output ROM
         int msuStepIndex = 4;
-        if (hasSprite && !skipPaths.Contains(romDest))
+        if (hasSprite)
         {
             progress.Report(("Applying sprite...", 4, totalSteps));
             var spriteError = await Task.Run(() => SpriteApplier.Apply(req.SpriteSourcePath!, romDest), ct);
@@ -124,13 +119,10 @@ public class ApplyEngine
             msuStepIndex = 5;
         }
 
-        // STEP 7 — Write 0-byte .msu
+        // STEP 7 — Write 0-byte .msu (always overwrite — excluded from conflict detection)
         progress.Report(("Writing .msu marker...", msuStepIndex, totalSteps));
-        if (!skipPaths.Contains(msuDest))
-        {
-            await Task.Run(() => File.WriteAllBytes(msuDest, Array.Empty<byte>()), ct);
-            filesWritten.Add(msuDest);
-        }
+        await Task.Run(() => File.WriteAllBytes(msuDest, Array.Empty<byte>()), ct);
+        filesWritten.Add(msuDest);
 
         // STEP 8 — Copy PCMs
         for (int i = 0; i < pcmDests.Count; i++)

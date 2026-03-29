@@ -13,6 +13,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="LTTPEnhancementTools.Tests\**" />
+    <None Remove="LTTPEnhancementTools.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
   </ItemGroup>
 

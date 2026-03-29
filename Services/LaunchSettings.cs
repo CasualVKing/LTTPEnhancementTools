@@ -13,6 +13,9 @@ public class LaunchSettings
     [JsonPropertyName("sniPath")]
     public string SniPath { get; set; } = string.Empty;
 
+    [JsonPropertyName("archipelagoLauncherPath")]
+    public string ArchipelagoLauncherPath { get; set; } = string.Empty;
+
     [JsonPropertyName("trackerUrl")]
     public string TrackerUrl { get; set; } = string.Empty;
 
