@@ -6,5 +6,6 @@ public record ArchipelagoMetadata(
     string PlayerName,
     string Game,
     string PatchFilePath,
-    string ExpectedSfcPath
+    string ExpectedSfcPath,
+    string BaseChecksum
 );

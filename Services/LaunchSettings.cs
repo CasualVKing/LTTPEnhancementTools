@@ -21,4 +21,7 @@ public class LaunchSettings
 
     [JsonPropertyName("seedUrl")]
     public string SeedUrl { get; set; } = string.Empty;
+
+    [JsonPropertyName("baseRomPath")]
+    public string BaseRomPath { get; set; } = string.Empty;
 }

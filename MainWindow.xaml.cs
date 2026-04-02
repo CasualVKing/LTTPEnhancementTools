@@ -38,6 +38,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string? _archipelagoLauncherPath;
     private string? _trackerUrl;
     private string? _seedUrl;
+    private string? _baseRomPath;
     private string? _currentPlaylistPath;
     private string? _currentPlaylistName;
     private bool _hasUnsavedPlaylistChanges;
@@ -88,6 +89,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         get => _seedUrl;
         set { _seedUrl = value; OnPropertyChanged(); SaveLaunchSettings(); }
+    }
+    public string? BaseRomPath
+    {
+        get => _baseRomPath;
+        set { _baseRomPath = value; OnPropertyChanged(); SaveLaunchSettings(); }
     }
 
     public ObservableCollection<TrackSlot> Tracks { get; } = new();
@@ -317,6 +323,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _sniPath             = launchSettings.SniPath.NullIfEmpty();
             _archipelagoLauncherPath = launchSettings.ArchipelagoLauncherPath.NullIfEmpty();
             _trackerUrl          = launchSettings.TrackerUrl.NullIfEmpty();
+            _baseRomPath         = launchSettings.BaseRomPath.NullIfEmpty();
             _seedUrl             = launchSettings.SeedUrl.NullIfEmpty();
         }
 
@@ -472,11 +479,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _sniPath             = wizard.Result.SniPath.NullIfEmpty();
                 _archipelagoLauncherPath = wizard.Result.ArchipelagoLauncherPath.NullIfEmpty();
                 _trackerUrl          = wizard.Result.TrackerUrl.NullIfEmpty();
+                _baseRomPath         = wizard.Result.BaseRomPath.NullIfEmpty();
                 OnPropertyChanged(nameof(EmulatorPath));
                 OnPropertyChanged(nameof(ConnectorScriptPath));
                 OnPropertyChanged(nameof(SniPath));
                 OnPropertyChanged(nameof(ArchipelagoLauncherPath));
                 OnPropertyChanged(nameof(TrackerUrl));
+                OnPropertyChanged(nameof(BaseRomPath));
                 SyncTrackerCombo();
                 AppendLog("Launch settings saved.");
             }
@@ -555,46 +564,32 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             if (!File.Exists(metadata!.ExpectedSfcPath))
             {
-                // SFC not generated yet — offer to launch Archipelago Launcher
-                if (!string.IsNullOrEmpty(_archipelagoLauncherPath) && File.Exists(_archipelagoLauncherPath))
+                // SFC not generated yet — apply the bsdiff4 patch ourselves
+                if (string.IsNullOrEmpty(_baseRomPath) || !File.Exists(_baseRomPath))
                 {
-                    var answer = MessageBox.Show(
-                        $"The ROM has not been generated yet.\n\n" +
-                        $"Expected: {Path.GetFileName(metadata.ExpectedSfcPath)}\n\n" +
-                        "Would you like to open the patch in Archipelago Launcher to generate it?",
-                        "ROM Not Found",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Question);
-
-                    if (answer == MessageBoxResult.Yes)
+                    // Prompt user to select their base ROM
+                    var romDlg = new OpenFileDialog
                     {
-                        try
-                        {
-                            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                            {
-                                FileName = _archipelagoLauncherPath,
-                                Arguments = $"\"{filePath}\"",
-                                UseShellExecute = true
-                            })?.Dispose();
-                            AppendLog("Archipelago Launcher started. Select the patch again after the ROM is generated.");
-                        }
-                        catch (Exception ex)
-                        {
-                            AppendLog($"[ERROR] Failed to launch: {ex.Message}");
-                        }
-                    }
+                        Title = "Select your vanilla ALttP ROM (base ROM for patching)",
+                        Filter = "SNES ROM Files (*.sfc;*.smc)|*.sfc;*.smc|All Files (*.*)|*.*",
+                        CheckFileExists = true
+                    };
+                    if (romDlg.ShowDialog(this) != true)
+                        return;
+
+                    BaseRomPath = romDlg.FileName;
                 }
-                else
+
+                AppendLog("Generating ROM from patch...");
+                var (sfcPath, patchError) = ArchipelagoPatchReader.ApplyPatch(filePath, _baseRomPath!);
+                if (patchError is not null)
                 {
-                    MessageBox.Show(
-                        $"The ROM has not been generated yet.\n\n" +
-                        $"Expected: {Path.GetFileName(metadata.ExpectedSfcPath)}\n\n" +
-                        "Open the .aplttp file in Archipelago Launcher first, then select it here again.",
-                        "ROM Not Found",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
+                    AppendLog($"[ERROR] {patchError}");
+                    MessageBox.Show(patchError, "Patch Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
                 }
-                return;
+
+                AppendLog($"ROM generated: {Path.GetFileName(sfcPath!)}");
             }
 
             // SFC exists — set it as the ROM
@@ -1557,6 +1552,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ArchipelagoLauncherPath = _archipelagoLauncherPath ?? string.Empty,
             TrackerUrl          = _trackerUrl          ?? string.Empty,
             SeedUrl             = _seedUrl             ?? string.Empty,
+            BaseRomPath         = _baseRomPath         ?? string.Empty,
         });
 
     // ── Sprite Handlers ───────────────────────────────────────────────────
@@ -1801,6 +1797,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (dlg.ShowDialog(this) == true) ArchipelagoLauncherPath = dlg.FileName;
     }
 
+    private void BrowseBaseRom_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new OpenFileDialog
+        {
+            Title = "Select vanilla ALttP ROM (base ROM for patching)",
+            Filter = "SNES ROM Files (*.sfc;*.smc)|*.sfc;*.smc|All Files (*.*)|*.*",
+            CheckFileExists = true
+        };
+        if (dlg.ShowDialog(this) == true) BaseRomPath = dlg.FileName;
+    }
+
     private void TrackerCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (sender is ComboBox combo && combo.SelectedItem is ComboBoxItem item)
@@ -1846,19 +1853,30 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
 
-        // Start Archipelago Launcher if configured and not already running
-        if (!string.IsNullOrEmpty(_archipelagoLauncherPath) && File.Exists(_archipelagoLauncherPath))
+        // Launch the SNI client directly (lives next to ArchipelagoLauncher.exe)
+        string? sniClientPath = null;
+        if (!string.IsNullOrEmpty(_archipelagoLauncherPath))
         {
-            var procs = System.Diagnostics.Process.GetProcessesByName(Path.GetFileNameWithoutExtension(_archipelagoLauncherPath));
-            bool archRunning = procs.Length > 0;
-            foreach (var p in procs) p.Dispose();
-
-            if (!archRunning)
+            string? archDir = Path.GetDirectoryName(_archipelagoLauncherPath);
+            if (archDir is not null)
             {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                    { FileName = _archipelagoLauncherPath, UseShellExecute = true })?.Dispose();
-                AppendLog("Archipelago Launcher started.");
+                string candidate = Path.Combine(archDir, "ArchipelagoSNIClient.exe");
+                if (File.Exists(candidate))
+                    sniClientPath = candidate;
             }
+        }
+
+        if (sniClientPath is not null)
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                { FileName = sniClientPath, UseShellExecute = true })?.Dispose();
+            AppendLog("SNI client started.");
+        }
+        else if (!string.IsNullOrEmpty(_archipelagoLauncherPath) && File.Exists(_archipelagoLauncherPath))
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                { FileName = _archipelagoLauncherPath, UseShellExecute = true })?.Dispose();
+            AppendLog("Archipelago Launcher started.");
         }
     }
 

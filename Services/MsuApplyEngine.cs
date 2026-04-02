@@ -128,10 +128,13 @@ public class ApplyEngine
             msuStepIndex = 5;
         }
 
-        // STEP 7 — Write 0-byte .msu (always overwrite — excluded from conflict detection)
-        progress.Report(("Writing .msu marker...", msuStepIndex, totalSteps));
-        await Task.Run(() => File.WriteAllBytes(msuDest, Array.Empty<byte>()), ct);
-        filesWritten.Add(msuDest);
+        // STEP 7 — Write 0-byte .msu only when music tracks are assigned
+        if (sortedSlots.Count > 0)
+        {
+            progress.Report(("Writing .msu marker...", msuStepIndex, totalSteps));
+            await Task.Run(() => File.WriteAllBytes(msuDest, Array.Empty<byte>()), ct);
+            filesWritten.Add(msuDest);
+        }
 
         // STEP 8 — Copy PCMs
         for (int i = 0; i < pcmDests.Count; i++)

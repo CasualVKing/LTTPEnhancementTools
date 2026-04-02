@@ -555,6 +555,7 @@
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="120"/>
@@ -562,19 +563,39 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
 
-                                    <!-- Emulator -->
+                                    <!-- Base ROM -->
                                     <TextBlock Grid.Row="0" Grid.Column="0"
+                                               Text="Base ROM"
+                                               FontSize="12"
+                                               Foreground="{StaticResource TextMutedBrush}"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,0,6"
+                                               ToolTip="Vanilla ALttP ROM used to generate patched ROMs from .aplttp files"/>
+                                    <TextBox Grid.Row="0" Grid.Column="1"
+                                             Style="{StaticResource DarkTextBox}"
+                                             Text="{Binding BaseRomPath, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                                             Margin="0,0,6,6"
+                                             ToolTip="Path to your vanilla ALttP ROM (.sfc or .smc)"/>
+                                    <Button Grid.Row="0" Grid.Column="2"
+                                            Content="Browse"
+                                            Style="{StaticResource DarkButton}"
+                                            Padding="8,4"
+                                            Margin="0,0,0,6"
+                                            Click="BrowseBaseRom_Click"/>
+
+                                    <!-- Emulator -->
+                                    <TextBlock Grid.Row="1" Grid.Column="0"
                                                Text="Emulator"
                                                FontSize="12"
                                                Foreground="{StaticResource TextMutedBrush}"
                                                VerticalAlignment="Center"
                                                Margin="0,0,0,6"/>
-                                    <TextBox Grid.Row="0" Grid.Column="1"
+                                    <TextBox Grid.Row="1" Grid.Column="1"
                                              Style="{StaticResource DarkTextBox}"
                                              Text="{Binding EmulatorPath, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                              Margin="0,0,6,6"
                                              ToolTip="Path to your emulator EXE (e.g. EmuHawk.exe)"/>
-                                    <Button Grid.Row="0" Grid.Column="2"
+                                    <Button Grid.Row="1" Grid.Column="2"
                                             Content="Browse"
                                             Style="{StaticResource DarkButton}"
                                             Padding="8,4"
@@ -582,18 +603,18 @@
                                             Click="BrowseEmulator_Click"/>
 
                                     <!-- Connector Script -->
-                                    <TextBlock Grid.Row="1" Grid.Column="0"
+                                    <TextBlock Grid.Row="2" Grid.Column="0"
                                                Text="Connector Script"
                                                FontSize="12"
                                                Foreground="{StaticResource TextMutedBrush}"
                                                VerticalAlignment="Center"
                                                Margin="0,0,0,6"
                                                ToolTip="Lua connector script for Archipelago (passed as --lua to BizHawk)"/>
-                                    <TextBox Grid.Row="1" Grid.Column="1"
+                                    <TextBox Grid.Row="2" Grid.Column="1"
                                              Style="{StaticResource DarkTextBox}"
                                              Text="{Binding ConnectorScriptPath, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                              Margin="0,0,6,6"/>
-                                    <Button Grid.Row="1" Grid.Column="2"
+                                    <Button Grid.Row="2" Grid.Column="2"
                                             Content="Browse"
                                             Style="{StaticResource DarkButton}"
                                             Padding="8,4"
@@ -601,18 +622,18 @@
                                             Click="BrowseConnector_Click"/>
 
                                     <!-- SNI -->
-                                    <TextBlock Grid.Row="2" Grid.Column="0"
+                                    <TextBlock Grid.Row="3" Grid.Column="0"
                                                Text="SNI"
                                                FontSize="12"
                                                Foreground="{StaticResource TextMutedBrush}"
                                                VerticalAlignment="Center"
                                                Margin="0,0,0,6"
                                                ToolTip="SNI.exe — started automatically before the emulator"/>
-                                    <TextBox Grid.Row="2" Grid.Column="1"
+                                    <TextBox Grid.Row="3" Grid.Column="1"
                                              Style="{StaticResource DarkTextBox}"
                                              Text="{Binding SniPath, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                              Margin="0,0,6,6"/>
-                                    <Button Grid.Row="2" Grid.Column="2"
+                                    <Button Grid.Row="3" Grid.Column="2"
                                             Content="Browse"
                                             Style="{StaticResource DarkButton}"
                                             Padding="8,4"
@@ -620,18 +641,18 @@
                                             Click="BrowseSni_Click"/>
 
                                     <!-- Archipelago Launcher -->
-                                    <TextBlock Grid.Row="3" Grid.Column="0"
+                                    <TextBlock Grid.Row="4" Grid.Column="0"
                                                Text="Archipelago"
                                                FontSize="12"
                                                Foreground="{StaticResource TextMutedBrush}"
                                                VerticalAlignment="Center"
                                                Margin="0,0,0,6"
                                                ToolTip="ArchipelagoLauncher.exe — started automatically so you can connect to your room&#x0a;Typically at: C:\ProgramData\Archipelago\ArchipelagoLauncher.exe"/>
-                                    <TextBox Grid.Row="3" Grid.Column="1"
+                                    <TextBox Grid.Row="4" Grid.Column="1"
                                              Style="{StaticResource DarkTextBox}"
                                              Text="{Binding ArchipelagoLauncherPath, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
                                              Margin="0,0,6,6"/>
-                                    <Button Grid.Row="3" Grid.Column="2"
+                                    <Button Grid.Row="4" Grid.Column="2"
                                             Content="Browse"
                                             Style="{StaticResource DarkButton}"
                                             Padding="8,4"
@@ -639,13 +660,13 @@
                                             Click="BrowseArchipelago_Click"/>
 
                                     <!-- Room ID -->
-                                    <TextBlock Grid.Row="4" Grid.Column="0"
+                                    <TextBlock Grid.Row="5" Grid.Column="0"
                                                Text="Room ID"
                                                FontSize="12"
                                                Foreground="{StaticResource TextMutedBrush}"
                                                VerticalAlignment="Center"
                                                ToolTip="Your Archipelago room address (e.g. archipelago.gg:12345) — saved for reference"/>
-                                    <TextBox Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2"
+                                    <TextBox Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2"
                                              Style="{StaticResource DarkTextBox}"
                                              Text="{Binding SeedUrl, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"/>
                                 </Grid>
