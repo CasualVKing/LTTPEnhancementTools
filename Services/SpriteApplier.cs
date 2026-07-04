@@ -14,6 +14,10 @@ public static class SpriteApplier
     private const int RomPaletteOffset = 0xDD308;   // Palette data (120 bytes)
     private const int RomGlovesOffset  = 0xDEDF5;   // Gloves palette (4 bytes)
     private const int RomGfxMaxLength  = 0x7000;    // 28,672 bytes max
+    private const int RomPaletteLength = 120;
+
+    /// <summary>Sidecar extension for the original-region backup used by preserveOriginal.</summary>
+    public const string BackupExtension = ".spritebak";
 
     // ZSPR header field byte offsets
     private const int ZsprGfxOffsetPos     = 9;
@@ -71,14 +75,21 @@ public static class SpriteApplier
 
     /// <summary>
     /// Applies a sprite file to the ROM at romDestPath (in-place patch).
+    /// When <paramref name="preserveOriginal"/> is true (repeated in-place applies to the
+    /// same ROM), the ROM's original sprite regions are backed up to a .spritebak sidecar
+    /// on first apply and restored before each subsequent apply, so a sprite with shorter
+    /// pixel data never inherits residue from the previously applied sprite.
     /// Returns null on success, or an error string.
     /// </summary>
-    public static string? Apply(string spritePath, string romDestPath)
+    public static string? Apply(string spritePath, string romDestPath, bool preserveOriginal = false)
     {
         try
         {
             var ext = Path.GetExtension(spritePath).ToLowerInvariant();
             var rom = File.ReadAllBytes(romDestPath);
+
+            if (preserveOriginal)
+                RestoreOrBackupOriginalRegions(rom, romDestPath);
 
             if (ext == ".zspr")
             {
@@ -164,5 +175,42 @@ public static class SpriteApplier
         {
             return $"Failed to apply sprite: {ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// If a backup sidecar exists, copies its regions back into <paramref name="rom"/>;
+    /// otherwise writes the ROM's current regions out as the backup.
+    /// </summary>
+    private static void RestoreOrBackupOriginalRegions(byte[] rom, string romPath)
+    {
+        const int backupSize = RomGfxMaxLength + RomPaletteLength + 4;
+
+        // ROMs smaller than the sprite regions can't be sprite-patched anyway;
+        // the per-sprite bounds checks in Apply will produce the real error.
+        if (rom.Length < RomGfxOffset + RomGfxMaxLength ||
+            rom.Length < RomPaletteOffset + RomPaletteLength ||
+            rom.Length < RomGlovesOffset + 4)
+            return;
+
+        string backupPath = romPath + BackupExtension;
+
+        if (File.Exists(backupPath))
+        {
+            var backup = File.ReadAllBytes(backupPath);
+            if (backup.Length == backupSize)
+            {
+                Array.Copy(backup, 0, rom, RomGfxOffset, RomGfxMaxLength);
+                Array.Copy(backup, RomGfxMaxLength, rom, RomPaletteOffset, RomPaletteLength);
+                Array.Copy(backup, RomGfxMaxLength + RomPaletteLength, rom, RomGlovesOffset, 4);
+                return;
+            }
+            // Wrong size — stale/corrupt backup; fall through and rewrite it from the ROM.
+        }
+
+        var fresh = new byte[backupSize];
+        Array.Copy(rom, RomGfxOffset, fresh, 0, RomGfxMaxLength);
+        Array.Copy(rom, RomPaletteOffset, fresh, RomGfxMaxLength, RomPaletteLength);
+        Array.Copy(rom, RomGlovesOffset, fresh, RomGfxMaxLength + RomPaletteLength, 4);
+        File.WriteAllBytes(backupPath, fresh);
     }
 }

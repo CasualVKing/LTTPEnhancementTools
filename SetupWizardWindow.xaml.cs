@@ -12,6 +12,7 @@ public partial class SetupWizardWindow : Window, INotifyPropertyChanged
 {
     private int _step;
     private readonly StackPanel[] _stepPanels;
+    private readonly LaunchSettings? _existing;
 
     // Properties bound to the wizard TextBoxes
     private string? _emulatorPath;
@@ -53,6 +54,7 @@ public partial class SetupWizardWindow : Window, INotifyPropertyChanged
     {
         InitializeComponent();
         DataContext = this;
+        _existing = existing;
 
         // Pre-populate from existing settings (re-run wizard scenario)
         if (existing is not null)
@@ -122,6 +124,10 @@ public partial class SetupWizardWindow : Window, INotifyPropertyChanged
             SniPath             = _sniPath             ?? string.Empty,
             ArchipelagoLauncherPath = _archipelagoLauncherPath ?? string.Empty,
             TrackerUrl          = _trackerUrl          ?? string.Empty,
+            // The wizard doesn't edit these — carry them through so re-running
+            // the wizard never wipes a previously configured base ROM or seed URL.
+            SeedUrl             = _existing?.SeedUrl     ?? string.Empty,
+            BaseRomPath         = _existing?.BaseRomPath ?? string.Empty,
         };
         LaunchSettingsManager.Save(Result);
         DialogResult = true;

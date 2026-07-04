@@ -16,11 +16,7 @@ namespace LTTPEnhancementTools.Controls;
 /// </summary>
 public partial class SpriteImageControl : UserControl
 {
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
-
-    private static readonly string PreviewCacheDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "LTTPEnhancementTools", "SpriteCache", "Previews");
+    private static readonly HttpClient Http = Services.SharedHttp.Client;
 
     public static readonly DependencyProperty ImageUrlProperty =
         DependencyProperty.Register(
@@ -52,76 +48,55 @@ public partial class SpriteImageControl : UserControl
         _cts = cts;
 
         SpriteImage.Source = null;
+        ErrorGlyph.Visibility = Visibility.Collapsed;
         TriforceCanvas.Visibility = Visibility.Visible;
 
         if (string.IsNullOrEmpty(url)) return;
 
         try
         {
-            byte[] bytes;
-            bool isWeb = url.StartsWith("http", StringComparison.OrdinalIgnoreCase);
-
-            if (isWeb)
-            {
-                var cachePath = GetPreviewCachePath(url);
-                if (File.Exists(cachePath))
-                {
-                    bytes = await File.ReadAllBytesAsync(cachePath, cts.Token);
-                }
-                else
-                {
-                    bytes = await Http.GetByteArrayAsync(url, cts.Token);
-                    _ = SavePreviewAsync(cachePath, bytes);
-                }
-            }
-            else
-            {
-                bytes = await File.ReadAllBytesAsync(url, cts.Token);
-            }
-
+            var bmp = await LoadBitmapAsync(url, cts.Token);
             if (cts.IsCancellationRequested) return;
 
-            var bmp = new BitmapImage();
-            using var ms = new MemoryStream(bytes);
-            bmp.BeginInit();
-            bmp.DecodePixelWidth = 64;
-            bmp.StreamSource = ms;
-            bmp.CacheOption = BitmapCacheOption.OnLoad;
-            bmp.EndInit();
-            bmp.Freeze();
-
-            if (cts.IsCancellationRequested) return;
+            if (bmp is null)
+            {
+                ShowError();
+                return;
+            }
 
             SpriteImage.Source = bmp;
             TriforceCanvas.Visibility = Visibility.Collapsed;
         }
         catch (OperationCanceledException) { }
-        catch { /* Keep triforce visible on error */ }
-    }
-
-    private static string GetPreviewCachePath(string url)
-    {
-        try
-        {
-            var fileName = Path.GetFileName(new Uri(url).LocalPath);
-            if (string.IsNullOrEmpty(fileName))
-                fileName = Math.Abs(url.GetHashCode()).ToString("x8") + ".png";
-            fileName = string.Concat(fileName.Split(Path.GetInvalidFileNameChars()));
-            return Path.Combine(PreviewCacheDir, fileName);
-        }
         catch
         {
-            return Path.Combine(PreviewCacheDir, Math.Abs(url.GetHashCode()).ToString("x8") + ".png");
+            // Download/read failed — show the error glyph rather than spinning forever.
+            // The load retries naturally when the (virtualized) item is realized again.
+            if (!cts.IsCancellationRequested)
+                ShowError();
         }
     }
 
-    private static async Task SavePreviewAsync(string path, byte[] bytes)
+    private void ShowError()
     {
-        try
+        TriforceCanvas.Visibility = Visibility.Collapsed;
+        ErrorGlyph.Visibility = Visibility.Visible;
+    }
+
+    private static async Task<BitmapImage?> LoadBitmapAsync(string url, CancellationToken ct)
+    {
+        if (!url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            await File.WriteAllBytesAsync(path, bytes);
+            var bytes = await File.ReadAllBytesAsync(url, ct);
+            return Services.PreviewCache.TryDecode(bytes);
         }
-        catch { }
+
+        // EnsureCachedAsync self-heals: a cached file that no longer decodes (truncated
+        // write from an old crash) is deleted and re-downloaded, and fresh bytes are only
+        // cached after decoding successfully — a corrupt file can never wedge a sprite.
+        var cachePath = await Services.PreviewCache.EnsureCachedAsync(url, Http, ct);
+        if (cachePath is null) return null;
+
+        return Services.PreviewCache.TryDecode(await File.ReadAllBytesAsync(cachePath, ct));
     }
 }

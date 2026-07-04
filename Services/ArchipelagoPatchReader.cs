@@ -73,10 +73,14 @@ public static class ArchipelagoPatchReader
                 return (null, $"Base ROM checksum mismatch.\n\nExpected: {metadata.BaseChecksum}\nActual: {actualHash}\n\nMake sure you're using the correct vanilla ALttP ROM.");
         }
 
+        // Write to a temp file, then move into place only on success. A failed apply must
+        // never leave a partial .sfc — callers treat File.Exists(ExpectedSfcPath) as
+        // "already patched" and would trust the corrupt ROM on every subsequent load.
+        string sfcPath = metadata.ExpectedSfcPath;
+        string tempPath = sfcPath + ".tmp";
+
         try
         {
-            string sfcPath = metadata.ExpectedSfcPath;
-
             // Extract delta.bsdiff4 into memory (ZIP entry streams aren't seekable)
             byte[] patchBytes;
             using (var zip = ZipFile.OpenRead(aplttpPath))
@@ -89,23 +93,32 @@ public static class ArchipelagoPatchReader
                 patchBytes = ms.ToArray();
             }
 
-            using var baseRomStream = new MemoryStream(File.ReadAllBytes(baseRomPath));
-            using var outputStream = File.Create(sfcPath);
+            using (var baseRomStream = new MemoryStream(File.ReadAllBytes(baseRomPath)))
+            using (var outputStream = File.Create(tempPath))
+            {
+                // BinaryPatch.Apply may call openPatchStream multiple times;
+                // return a fresh MemoryStream each time so disposal doesn't affect us
+                BinaryPatch.Apply(baseRomStream, () => new MemoryStream(patchBytes), outputStream);
+            }
 
-            // BinaryPatch.Apply may call openPatchStream multiple times;
-            // return a fresh MemoryStream each time so disposal doesn't affect us
-            BinaryPatch.Apply(baseRomStream, () => new MemoryStream(patchBytes), outputStream);
-
+            File.Move(tempPath, sfcPath, overwrite: true);
             return (sfcPath, null);
         }
         catch (InvalidDataException ex)
         {
+            TryDelete(tempPath);
             return (null, $"Patch application failed: {ex.Message}");
         }
         catch (Exception ex)
         {
+            TryDelete(tempPath);
             return (null, $"Error applying patch: {ex.Message}");
         }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try { File.Delete(path); } catch { /* best-effort cleanup */ }
     }
 
     private static string ComputeMd5(string filePath)

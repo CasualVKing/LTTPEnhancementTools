@@ -177,7 +177,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool CanExportPack => Tracks.Any(t => t.HasFile) && !_isApplying && !_isConverting;
 
     private string? _lastOutputRomPath;
-    public bool CanLaunch => _lastOutputRomPath is not null && File.Exists(_lastOutputRomPath);
 
     public string AssignedCountText
     {
@@ -226,11 +225,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Path.GetDirectoryName(Environment.ProcessPath!)!,
             "MusicLibrary");
 
-    private static string DefaultOutputFolder =>
-        Path.Combine(
-            Path.GetDirectoryName(Environment.ProcessPath!)!,
-            "Output");
-
     private string PlaylistsFolder =>
         _library.LibraryFolder is not null
             ? Path.Combine(_library.LibraryFolder, "Playlists")
@@ -248,30 +242,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly ApplyEngine _applyEngine = new();
     private CancellationTokenSource _closeCts = new();
     private static readonly System.Net.Http.HttpClient Http = Services.SharedHttp.Client;
-
-    private static string GetSpritePreviewCachePath(string url)
-    {
-        // Use the same Previews cache dir as SpriteImageControl so images downloaded during
-        // browsing are reused immediately without a second HTTP request.
-        try
-        {
-            var fileName = Path.GetFileName(new Uri(url).LocalPath);
-            if (string.IsNullOrEmpty(fileName))
-                fileName = Math.Abs(url.GetHashCode()).ToString("x8") + ".png";
-            fileName = string.Concat(fileName.Split(Path.GetInvalidFileNameChars()));
-            return Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "LTTPEnhancementTools", "SpriteCache", "Previews", fileName);
-        }
-        catch
-        {
-            var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(url));
-            return Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "LTTPEnhancementTools", "SpriteCache", "Previews",
-                Convert.ToHexString(hash)[..16] + ".png");
-        }
-    }
 
     // ── Constructor ───────────────────────────────────────────────────────
     public MainWindow()
@@ -308,12 +278,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _library.SetFolder(libraryPath);
         Directory.CreateDirectory(Path.Combine(libraryPath, "Playlists"));
 
-        string outputPath = string.IsNullOrEmpty(settings.OutputFolder)
-            ? DefaultOutputFolder
-            : settings.OutputFolder;
-        Directory.CreateDirectory(outputPath);
-        OutputDir = outputPath;
-
         // Load launch settings (null = file doesn't exist yet; wizard shown in Window_Loaded)
         var launchSettings = LaunchSettingsManager.TryLoad();
         if (launchSettings is not null)
@@ -327,8 +291,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _seedUrl             = launchSettings.SeedUrl.NullIfEmpty();
         }
 
-        // Persist any defaulted paths
-        if (string.IsNullOrEmpty(settings.LibraryFolder) || string.IsNullOrEmpty(settings.OutputFolder))
+        // Persist the defaulted library path
+        if (string.IsNullOrEmpty(settings.LibraryFolder))
             SaveAppSettings();
 
         // Auto-restore last sprite and last playlist (use backing fields directly to avoid
@@ -432,15 +396,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var previewUrl = SpriteBrowserWindow.DefaultLinkPreviewUrl
                           ?? SpriteBrowserWindow.DefaultLinkPreviewFallbackUrl;
 
-            var cachePath = GetSpritePreviewCachePath(previewUrl);
-            if (!File.Exists(cachePath))
-            {
-                var bytes = await Http.GetByteArrayAsync(previewUrl);
-                Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
-                await File.WriteAllBytesAsync(cachePath, bytes);
-            }
-
-            DefaultSpritePreviewUrl = cachePath;
+            // Validates + self-heals the cache: corrupt files are re-downloaded,
+            // and bytes are only cached after they decode as a valid image.
+            var cachePath = await PreviewCache.EnsureCachedAsync(previewUrl, Http);
+            if (cachePath is not null)
+                DefaultSpritePreviewUrl = cachePath;
         }
         catch (Exception ex)
         {
@@ -1226,55 +1186,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             LastPatchPath        = _archipelagoMetadata?.PatchFilePath ?? string.Empty,
         });
 
-    // ── Output Dir Browse ─────────────────────────────────────────────────
-    private void BrowseOutputDir_Click(object sender, RoutedEventArgs e)
-    {
-        var dlg = new Microsoft.Win32.OpenFolderDialog
-        {
-            Title = "Select Output Folder for MSU Pack"
-        };
-
-        if (dlg.ShowDialog(this) == true)
-        {
-            Directory.CreateDirectory(dlg.FolderName);
-            OutputDir = dlg.FolderName;
-            SaveAppSettings();
-            AppendLog($"Output folder: {OutputDir}");
-        }
-    }
-
-    private async void CleanOutputFolder_Click(object sender, RoutedEventArgs e)
-    {
-        if (OutputDir is null || !Directory.Exists(OutputDir)) return;
-
-        var files = Directory.GetFiles(OutputDir);
-        if (files.Length == 0)
-        {
-            AppendLog("Output folder is already empty.");
-            return;
-        }
-
-        var result = MessageBox.Show(
-            $"Delete all {files.Length} file(s) in:\n\n{OutputDir}\n\nThis cannot be undone.",
-            "Clear Output Folder?",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
-
-        if (result != MessageBoxResult.Yes) return;
-
-        int deleted = await Task.Run(() =>
-        {
-            int count = 0;
-            foreach (var f in files)
-            {
-                try { File.Delete(f); count++; }
-                catch { /* skip locked files */ }
-            }
-            return count;
-        });
-        AppendLog($"Cleared {deleted} file(s) from output folder.");
-    }
-
     // ── Apply ─────────────────────────────────────────────────────────────
     private async Task<bool> ApplyCoreAsync()
     {
@@ -1339,9 +1250,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ApplySuccessText.Text = $"Done! {result.FilesWritten.Count} file(s) written.";
             ApplySuccessText.Visibility = Visibility.Visible;
 
-            // Track the output ROM for the Launch button (in-place mode uses the source ROM directly)
+            // Track the applied ROM for launching (in-place mode uses the source ROM directly)
             _lastOutputRomPath = _romPath;
-            OnPropertyChanged(nameof(CanLaunch));
 
             AppendLog($"Apply succeeded. {result.FilesWritten.Count} file(s) written to: {_outputDir}");
             foreach (var f in result.FilesWritten)
@@ -1492,10 +1402,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             AppendLog($"Previewing: {entry.Name}");
     }
 
-    private void LibraryItemAssign_Click(object sender, RoutedEventArgs e)
+    private async void LibraryItemAssign_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement el || el.Tag is not LibraryEntry entry) return;
-        _ = AssignLibraryEntryAsync(entry, _libraryTargetSlot!);
+        if (_libraryTargetSlot is not TrackSlot slot) return;
+        await SafeAsync(() => AssignLibraryEntryAsync(entry, slot));
     }
 
     private void LibraryPopup_Closed(object? sender, EventArgs e)
@@ -1536,7 +1447,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SettingsManager.Save(new AppSettings
         {
             LibraryFolder = _library.LibraryFolder ?? string.Empty,
-            OutputFolder  = _outputDir ?? string.Empty,
         });
 
     private void SaveLaunchSettings() =>
@@ -1622,12 +1532,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         try
         {
-            string cachePath = GetSpritePreviewCachePath(url);
-            if (!File.Exists(cachePath))
+            // Validates + self-heals the cache: corrupt files are re-downloaded,
+            // and bytes are only cached after they decode as a valid image.
+            string? cachePath = await PreviewCache.EnsureCachedAsync(url, Http);
+            if (cachePath is null)
             {
-                var bytes = await Http.GetByteArrayAsync(url);
-                Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
-                await File.WriteAllBytesAsync(cachePath, bytes);
+                System.Diagnostics.Debug.WriteLine($"[WARN] Sprite preview not a valid image: {url}");
+                return;
             }
             // Switch to local cached file — unique per URL so binding always updates
             SpritePreviewUrl = cachePath;
@@ -1850,6 +1761,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task LaunchArchipelagoAsync()
     {
+        try
+        {
+            await LaunchArchipelagoCoreAsync();
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"[ERROR] Archipelago launch failed: {ex.Message}");
+        }
+    }
+
+    private async Task LaunchArchipelagoCoreAsync()
+    {
         await EnsureSniRunningAsync();
 
         // Launch the SNI client directly (lives next to ArchipelagoLauncher.exe)
@@ -1909,11 +1832,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void LaunchTracker()
     {
-        if (!string.IsNullOrEmpty(_trackerUrl))
+        if (string.IsNullOrEmpty(_trackerUrl)) return;
+        try
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                 { FileName = _trackerUrl, UseShellExecute = true })?.Dispose();
             AppendLog("Tracker opened.");
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"[ERROR] Tracker launch failed: {ex.Message}");
         }
     }
 

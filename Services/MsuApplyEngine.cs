@@ -122,7 +122,10 @@ public class ApplyEngine
         if (hasSprite)
         {
             progress.Report(("Applying sprite...", 4, totalSteps));
-            var spriteError = await Task.Run(() => SpriteApplier.Apply(req.SpriteSourcePath!, romDest), ct);
+            // In-place mode patches the same ROM repeatedly — preserve the original
+            // sprite regions so switching sprites doesn't leave residue from the last one.
+            var spriteError = await Task.Run(
+                () => SpriteApplier.Apply(req.SpriteSourcePath!, romDest, preserveOriginal: req.InPlace), ct);
             if (spriteError != null)
                 throw new InvalidOperationException($"Sprite injection failed: {spriteError}");
             msuStepIndex = 5;

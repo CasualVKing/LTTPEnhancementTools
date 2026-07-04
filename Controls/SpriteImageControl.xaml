@@ -74,6 +74,19 @@
                   Data="M 20,34 L 40,34 L 30,17 Z"/>
         </Canvas>
 
+        <!-- Shown when the preview can't be downloaded or decoded (instead of spinning forever) -->
+        <TextBlock x:Name="ErrorGlyph"
+                   Text="no&#10;preview"
+                   FontSize="10"
+                   FontStyle="Italic"
+                   Foreground="#5A5A6E"
+                   TextAlignment="Center"
+                   LineHeight="13"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   Visibility="Collapsed"
+                   ToolTip="No preview image available — the sprite itself may still work if selected"/>
+
         <!-- Actual sprite image — Source is set by code-behind on DownloadCompleted -->
         <Image x:Name="SpriteImage"
                Width="64" Height="64"

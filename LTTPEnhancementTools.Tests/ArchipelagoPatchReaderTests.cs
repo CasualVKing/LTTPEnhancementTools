@@ -208,4 +208,24 @@ public class ArchipelagoPatchReaderTests : IDisposable
         Assert.NotNull(error);
         Assert.Contains("missing delta.bsdiff4", error);
     }
+
+    [Fact]
+    public void ApplyPatch_CorruptDelta_ReturnsErrorAndLeavesNoPartialSfc()
+    {
+        // A failed apply must not leave a partial .sfc behind — callers treat
+        // File.Exists(ExpectedSfcPath) as "already patched".
+        string romPath = Path.Combine(_tempDir, "base.sfc");
+        File.WriteAllBytes(romPath, new byte[] { 0x01, 0x02, 0x03 });
+
+        // delta.bsdiff4 contains garbage (a single 0x00 byte — not a valid bsdiff header)
+        string aplttp = CreateAplttp("corrupt.aplttp", new { server = "", player = 1, player_name = "", game = "" });
+
+        var (sfcPath, error) = ArchipelagoPatchReader.ApplyPatch(aplttp, romPath);
+
+        Assert.Null(sfcPath);
+        Assert.NotNull(error);
+        string expectedSfc = Path.Combine(_tempDir, "corrupt.sfc");
+        Assert.False(File.Exists(expectedSfc), "failed patch must not leave a partial .sfc");
+        Assert.False(File.Exists(expectedSfc + ".tmp"), "temp file must be cleaned up");
+    }
 }
