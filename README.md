@@ -1,5 +1,7 @@
 # Archipelago LTTP Enhancer
 
+[![Tests](https://github.com/CasualVKing/LTTPEnhancementTools/actions/workflows/test.yml/badge.svg)](https://github.com/CasualVKing/LTTPEnhancementTools/actions/workflows/test.yml)
+
 ![LTTP Enhanced](Resources/lttpEnhancedLogo.png)
 
 A Windows desktop utility for enhancing **Archipelago A Link to the Past** runs. Load your `.aplttp` patch file, apply MSU-1 music packs and custom Link sprites, then launch your entire Archipelago session — emulator (with Lua connector), SNI, SNI client, and tracker — in one click.
@@ -32,9 +34,11 @@ A Windows desktop utility for enhancing **Archipelago A Link to the Past** runs.
 ### Sprite
 - **Link Sprite replacement** — apply a custom `.zspr` or `.spr` Link sprite to your ROM
 - **Online Sprite Browser** — browse 600+ community sprites in a card grid with live preview thumbnails
+- **Local thumbnail rendering** — when a sprite's preview image is missing from alttpr.com (true for ~18% of the catalog), a thumbnail is generated directly from the sprite's own pixel data, so every sprite gets a real preview
 - **Random Sprite** — choose **Random All** (**?**) or **Random Favorites** (**?★**); a sprite is picked at apply time as a surprise
 - **Favorites** — star any sprite to pin it to the top of the list; favorites persist across sessions
 - **Offline support** — sprite list and all preview images are cached to disk after first load
+- **Lossless sprite switching** — the ROM's original sprite data is backed up to a small `.spritebak` file next to your ROM on first apply, so changing sprites never leaves leftovers from the previous one
 
 ### Auto Launch
 - **Setup Wizard** — on first run a 5-step wizard walks you through configuring your emulator, Archipelago connector script, Archipelago Launcher, SNI, and community tracker
@@ -47,6 +51,7 @@ A Windows desktop utility for enhancing **Archipelago A Link to the Past** runs.
 - **In-place enhancement** — sprite patches the `.sfc` directly; MSU files are written next to the ROM with matching names
 - **Non-destructive re-runs** — existing PCM files are kept as-is when you re-run Enhance & Launch; only newly assigned tracks are written
 - **Auto-save session** — your last patch, sprite, and playlist are remembered and restored on next launch
+- **Robust file handling** — patched ROMs and cached images are written atomically; interrupted writes can't leave corrupt files behind, and damaged cache entries repair themselves automatically
 - **No admin rights required** — per-user install, no elevated permissions needed
 - **No .NET runtime required** — ships as a single self-contained EXE
 
@@ -249,6 +254,8 @@ LTTPEnhancementTools/
 │   ├── OriginalSoundtrackManager.cs # Import/match/convert/cache original OST
 │   ├── LaunchSettings.cs         # Launch settings (emulator, SNI, tracker)
 │   ├── LaunchSettingsManager.cs  # Persist LaunchSettings to %LocalAppData%
+│   ├── PreviewCache.cs           # Self-healing preview image cache (atomic writes)
+│   ├── SpriteThumbnailRenderer.cs # Render thumbnails from ZSPR pixel data (SNES 4bpp)
 │   └── JsonDefaults.cs           # Shared JSON serializer options + HttpClient
 ├── Converters/
 │   └── ValueConverters.cs        # WPF value converters
@@ -262,7 +269,7 @@ LTTPEnhancementTools/
 ├── MainWindow.xaml / MainWindow.xaml.cs
 ├── SetupWizardWindow.xaml / SetupWizardWindow.xaml.cs
 ├── SpriteBrowserWindow.xaml / SpriteBrowserWindow.xaml.cs
-├── AutoLaunchDialog.xaml / AutoLaunchDialog.xaml.cs
+├── LTTPEnhancementTools.Tests/   # xUnit test suite (runs in CI on every push)
 ├── LTTPEnhancementTools.csproj
 ├── setup.iss                     # Inno Setup installer script
 └── publish.bat                   # One-command build + package script
