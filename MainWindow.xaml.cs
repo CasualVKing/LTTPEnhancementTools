@@ -1521,33 +1521,54 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         // Don't set web URL directly — the converter can't load HTTPS in .NET 8.
         // CacheSpritePreviewAsync finds the already-downloaded preview (from SpriteImageControl's
-        // cache) or downloads it, then sets SpritePreviewUrl to the local path.
+        // cache) or downloads it, then sets SpritePreviewUrl to the local path. The selected
+        // .zspr is already on disk, so a missing server preview can be rendered from it.
         if (window.SelectedSpritePreviewUrl is not null)
-            _ = CacheSpritePreviewAsync(window.SelectedSpritePreviewUrl);
+            _ = CacheSpritePreviewAsync(window.SelectedSpritePreviewUrl, window.SelectedSpritePath);
 
         AppendLog($"Sprite selected: {Path.GetFileNameWithoutExtension(window.SelectedSpritePath)}");
     }
 
-    private async Task CacheSpritePreviewAsync(string url)
+    private async Task CacheSpritePreviewAsync(string url, string? localZsprPath = null)
     {
+        string? cachePath = null;
         try
         {
             // Validates + self-heals the cache: corrupt files are re-downloaded,
             // and bytes are only cached after they decode as a valid image.
-            string? cachePath = await PreviewCache.EnsureCachedAsync(url, Http);
-            if (cachePath is null)
-            {
-                System.Diagnostics.Debug.WriteLine($"[WARN] Sprite preview not a valid image: {url}");
-                return;
-            }
-            // Switch to local cached file — unique per URL so binding always updates
-            SpritePreviewUrl = cachePath;
-            SaveAutoState();
+            cachePath = await PreviewCache.EnsureCachedAsync(url, Http);
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[WARN] Sprite preview cache failed: {ex.Message}");
         }
+
+        // Server preview missing (~18% of the catalog) — render one from the
+        // already-downloaded .zspr instead.
+        if (cachePath is null && localZsprPath is not null && File.Exists(localZsprPath))
+        {
+            try
+            {
+                var zspr = await File.ReadAllBytesAsync(localZsprPath);
+                var png = SpriteThumbnailRenderer.TryRenderPreviewPng(zspr, scale: 4);
+                if (png is not null)
+                {
+                    string genPath = PreviewCache.GetPath(url);
+                    if (await PreviewCache.TrySaveAsync(genPath, png))
+                        cachePath = genPath;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[WARN] Thumbnail render failed: {ex.Message}");
+            }
+        }
+
+        if (cachePath is null) return;
+
+        // Switch to local cached file — unique per URL so binding always updates
+        SpritePreviewUrl = cachePath;
+        SaveAutoState();
     }
 
     // ── Random sprite resolution ──────────────────────────────────────────

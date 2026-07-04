@@ -232,6 +232,7 @@
                                 <!-- Sprite preview with animated triforce loading indicator -->
                                 <controls:SpriteImageControl
                                     ImageUrl="{Binding Preview}"
+                                    SpriteFileUrl="{Binding File}"
                                     Margin="0,0,0,7"/>
 
                                 <!-- Sprite name -->

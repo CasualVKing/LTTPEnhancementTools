@@ -29,6 +29,22 @@ public partial class SpriteImageControl : UserControl
         set => SetValue(ImageUrlProperty, value);
     }
 
+    /// <summary>
+    /// Optional URL of the sprite's .zspr file. When set and the preview image is
+    /// unavailable (missing from alttpr's server), a thumbnail is rendered locally
+    /// from the sprite's own pixel data instead of showing "no preview".
+    /// </summary>
+    public static readonly DependencyProperty SpriteFileUrlProperty =
+        DependencyProperty.Register(
+            nameof(SpriteFileUrl), typeof(string), typeof(SpriteImageControl),
+            new PropertyMetadata(null));
+
+    public string? SpriteFileUrl
+    {
+        get => (string?)GetValue(SpriteFileUrlProperty);
+        set => SetValue(SpriteFileUrlProperty, value);
+    }
+
     private static void OnImageUrlChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         => ((SpriteImageControl)d).LoadImage(e.NewValue as string);
 
@@ -83,7 +99,7 @@ public partial class SpriteImageControl : UserControl
         ErrorGlyph.Visibility = Visibility.Visible;
     }
 
-    private static async Task<BitmapImage?> LoadBitmapAsync(string url, CancellationToken ct)
+    private async Task<BitmapImage?> LoadBitmapAsync(string url, CancellationToken ct)
     {
         if (!url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
         {
@@ -94,9 +110,57 @@ public partial class SpriteImageControl : UserControl
         // EnsureCachedAsync self-heals: a cached file that no longer decodes (truncated
         // write from an old crash) is deleted and re-downloaded, and fresh bytes are only
         // cached after decoding successfully — a corrupt file can never wedge a sprite.
-        var cachePath = await Services.PreviewCache.EnsureCachedAsync(url, Http, ct);
-        if (cachePath is null) return null;
+        try
+        {
+            var cachePath = await Services.PreviewCache.EnsureCachedAsync(url, Http, ct);
+            if (cachePath is not null)
+                return Services.PreviewCache.TryDecode(await File.ReadAllBytesAsync(cachePath, ct));
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { /* preview unavailable — try rendering from the sprite data below */ }
 
-        return Services.PreviewCache.TryDecode(await File.ReadAllBytesAsync(cachePath, ct));
+        return await TryGenerateFromSpriteAsync(url, ct);
+    }
+
+    /// <summary>
+    /// Fallback for previews missing from alttpr's server (~18% of the catalog):
+    /// downloads the .zspr and renders the standing-pose thumbnail from its own
+    /// pixel data. The generated PNG is saved at the preview's cache path, so
+    /// subsequent loads are plain cache hits.
+    /// </summary>
+    private async Task<BitmapImage?> TryGenerateFromSpriteAsync(string previewUrl, CancellationToken ct)
+    {
+        var fileUrl = SpriteFileUrl;
+        if (string.IsNullOrEmpty(fileUrl)) return null;
+
+        try
+        {
+            string zsprCachePath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "LTTPEnhancementTools", "SpriteCache",
+                Path.GetFileName(new Uri(fileUrl).LocalPath));
+
+            byte[] zspr;
+            if (File.Exists(zsprCachePath))
+            {
+                zspr = await File.ReadAllBytesAsync(zsprCachePath, ct);
+            }
+            else
+            {
+                zspr = await Http.GetByteArrayAsync(fileUrl, ct);
+                _ = Services.PreviewCache.TrySaveAsync(zsprCachePath, zspr);
+            }
+
+            var png = Services.SpriteThumbnailRenderer.TryRenderPreviewPng(zspr, scale: 4);
+            if (png is null) return null;
+
+            _ = Services.PreviewCache.TrySaveAsync(Services.PreviewCache.GetPath(previewUrl), png);
+            return Services.PreviewCache.TryDecode(png);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch
+        {
+            return null;
+        }
     }
 }
